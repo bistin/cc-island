@@ -174,26 +174,45 @@ struct LeftEarView: View {
     let isVisible: Bool
     @ObservedObject var stateManager: IslandStateManager
     @State private var appeared = false
+    @State private var actionPulse = false
+
+    private var isAction: Bool { event?.style == .action }
 
     var body: some View {
         ZStack {
             LeftEarShape(outerRadius: 16, notchRadius: 10)
                 .fill(.black)
 
+            // Pulsing border for action events
+            if isAction {
+                LeftEarShape(outerRadius: 16, notchRadius: 10)
+                    .stroke(event!.style.color.opacity(actionPulse ? 0.8 : 0.2), lineWidth: 1.5)
+            }
+
             if isVisible, let event {
                 Text(event.title)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.white)
+                    .font(.system(size: 12, weight: isAction ? .semibold : .medium))
+                    .foregroundColor(isAction ? event.style.color : .white)
                     .lineLimit(1)
                     .padding(.leading, 12)
                     .padding(.trailing, 14)
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
         }
-        .onTapGesture { stateManager.expand() }
+        .shadow(color: isAction ? (event?.style.color ?? .clear).opacity(actionPulse ? 0.6 : 0.1) : .clear, radius: 8)
+        .onTapGesture {
+            if isAction { stateManager.dismiss() } else { stateManager.expand() }
+        }
         .onChange(of: isVisible) { vis in
             withAnimation(.spring(response: 0.3, dampingFraction: 0.6).delay(0.05)) {
                 appeared = vis
+            }
+            if vis && event?.style == .action {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    actionPulse = true
+                }
+            } else {
+                actionPulse = false
             }
         }
     }
@@ -205,11 +224,19 @@ struct RightEarView: View {
     let event: IslandEvent?
     let isVisible: Bool
     @ObservedObject var stateManager: IslandStateManager
+    @State private var actionPulse = false
+
+    private var isAction: Bool { event?.style == .action }
 
     var body: some View {
         ZStack {
             RightEarShape(outerRadius: 16, notchRadius: 10)
                 .fill(.black)
+
+            if isAction {
+                RightEarShape(outerRadius: 16, notchRadius: 10)
+                    .stroke(event!.style.color.opacity(actionPulse ? 0.8 : 0.2), lineWidth: 1.5)
+            }
 
             if isVisible, let event {
                 HStack(spacing: 6) {
@@ -220,8 +247,8 @@ struct RightEarView: View {
 
                     if !event.subtitle.isEmpty {
                         Text(event.subtitle)
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundColor(event.style.color.opacity(0.9))
+                            .font(.system(size: 12, weight: isAction ? .semibold : .regular))
+                            .foregroundColor(isAction ? event.style.color : event.style.color.opacity(0.9))
                             .lineLimit(1)
                     } else {
                         Circle()
@@ -234,7 +261,19 @@ struct RightEarView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
         }
-        .onTapGesture { stateManager.expand() }
+        .shadow(color: isAction ? (event?.style.color ?? .clear).opacity(actionPulse ? 0.6 : 0.1) : .clear, radius: 8)
+        .onTapGesture {
+            if isAction { stateManager.dismiss() } else { stateManager.expand() }
+        }
+        .onChange(of: isVisible) { vis in
+            if vis && event?.style == .action {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    actionPulse = true
+                }
+            } else {
+                actionPulse = false
+            }
+        }
     }
 }
 

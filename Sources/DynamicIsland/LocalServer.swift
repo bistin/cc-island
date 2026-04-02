@@ -119,6 +119,7 @@ class LocalServer {
         let styleName = json["style"] as? String ?? "claude"
         let duration = json["duration"] as? Double ?? 4.0
         let progress = json["progress"] as? Double
+        let persistent = json["persistent"] as? Bool ?? (styleName == "action")
 
         let style = EventStyle(rawValue: styleName) ?? .claude
 
@@ -136,7 +137,8 @@ class LocalServer {
             style: style,
             duration: duration,
             detail: detail,
-            progress: progress
+            progress: progress,
+            persistent: persistent
         )
 
         stateManager?.pushEvent(event)

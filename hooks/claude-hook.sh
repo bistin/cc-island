@@ -121,7 +121,7 @@ case "$EVENT" in
     Notification)
         MSG=$(echo "$INPUT" | jq -r '.message // "Notification"')
         DISPLAY=$(truncate "$MSG" 45)
-        send "{\"title\":\"Claude Code\",\"subtitle\":\"$DISPLAY\",\"style\":\"warning\",\"duration\":6}"
+        send "{\"title\":\"Action needed\",\"subtitle\":\"$DISPLAY\",\"style\":\"action\"}"
         ;;
 
     # ─── Claude finished responding ────────────────────────

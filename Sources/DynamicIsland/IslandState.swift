@@ -12,15 +12,17 @@ struct IslandEvent: Identifiable {
     let duration: TimeInterval
     let detail: String?
     let progress: Double?
+    let persistent: Bool  // if true, won't auto-dismiss
 
     init(
-        icon: String = "📌",
+        icon: String = "",
         title: String,
         subtitle: String = "",
         style: EventStyle = .info,
         duration: TimeInterval = 4.0,
         detail: String? = nil,
-        progress: Double? = nil
+        progress: Double? = nil,
+        persistent: Bool = false
     ) {
         self.icon = icon
         self.title = title
@@ -29,6 +31,7 @@ struct IslandEvent: Identifiable {
         self.duration = duration
         self.detail = detail
         self.progress = progress
+        self.persistent = persistent
     }
 }
 
@@ -38,6 +41,7 @@ enum EventStyle: String, Codable {
     case warning
     case error
     case claude // Claude Code specific
+    case action // Needs user attention — persistent, pulsing
 
     var color: Color {
         switch self {
@@ -45,7 +49,8 @@ enum EventStyle: String, Codable {
         case .success: return .green
         case .warning: return .orange
         case .error: return .red
-        case .claude: return Color(red: 0.85, green: 0.65, blue: 0.45) // Claude's warm orange
+        case .claude: return Color(red: 0.85, green: 0.65, blue: 0.45)
+        case .action: return Color(red: 0.4, green: 0.7, blue: 1.0) // bright blue
         }
     }
 
@@ -56,6 +61,7 @@ enum EventStyle: String, Codable {
         case .warning: return .orange.opacity(0.4)
         case .error: return .red.opacity(0.4)
         case .claude: return Color(red: 0.85, green: 0.65, blue: 0.45).opacity(0.4)
+        case .action: return Color(red: 0.4, green: 0.7, blue: 1.0).opacity(0.6)
         }
     }
 }
@@ -126,10 +132,12 @@ class IslandStateManager: ObservableObject {
         }
 
         dismissTimer?.invalidate()
-        dismissTimer = Timer.scheduledTimer(withTimeInterval: event.duration, repeats: false) { [weak self] _ in
-            DispatchQueue.main.async {
-                guard let self, !self.isHovered else { return }
-                self.dismiss()
+        if !event.persistent {
+            dismissTimer = Timer.scheduledTimer(withTimeInterval: event.duration, repeats: false) { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self, !self.isHovered else { return }
+                    self.dismiss()
+                }
             }
         }
     }
