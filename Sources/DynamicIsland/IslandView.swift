@@ -36,26 +36,24 @@ struct IslandRootView: View {
         // Right ear: leading edge flush with notch right edge
         // Use two half-width containers to guarantee the notch gap stays centered
         HStack(spacing: IslandPanel.notchWidth) {
-            // Left half — ear aligned to right (touching notch)
+            // Left half — fixed width, ear aligned to right (touching notch)
             LeftEarView(
                 event: event,
                 isVisible: isVisible,
                 stateManager: stateManager
             )
-            .fixedSize(horizontal: true, vertical: false)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .offset(x: isVisible ? 0 : 150)
+            .frame(width: IslandPanel.earWidth, height: IslandPanel.notchHeight, alignment: .trailing)
+            .offset(x: isVisible ? 0 : IslandPanel.earWidth)
             .opacity(isVisible ? 1 : 0)
 
-            // Right half — ear aligned to left (touching notch)
+            // Right half — fixed width, ear aligned to left (touching notch)
             RightEarView(
                 event: event,
                 isVisible: isVisible,
                 stateManager: stateManager
             )
-            .fixedSize(horizontal: true, vertical: false)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .offset(x: isVisible ? 0 : -150)
+            .frame(width: IslandPanel.earWidth, height: IslandPanel.notchHeight, alignment: .leading)
+            .offset(x: isVisible ? 0 : -IslandPanel.earWidth)
             .opacity(isVisible ? 1 : 0)
         }
         .frame(height: IslandPanel.notchHeight)
@@ -307,7 +305,7 @@ struct ExpandedContentView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .frame(width: 500)
+        .frame(width: IslandPanel.earWidth * 2 + IslandPanel.notchWidth)
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .fill(.black)

@@ -70,10 +70,11 @@ enum IslandMode: Equatable {
     /// Window size — compact hugs the notch, expanded drops below it
     func size(hasNotch: Bool) -> CGSize {
         if hasNotch {
+            let w = IslandPanel.earWidth * 2 + IslandPanel.notchWidth
             switch self {
-            case .compact: return CGSize(width: 620, height: IslandPanel.notchHeight)
-            case .expanded: return CGSize(width: 620, height: IslandPanel.notchHeight + 130)
-            case .hidden: return CGSize(width: 620, height: IslandPanel.notchHeight)
+            case .compact: return CGSize(width: w, height: IslandPanel.notchHeight)
+            case .expanded: return CGSize(width: w, height: IslandPanel.notchHeight + 130)
+            case .hidden: return CGSize(width: w, height: IslandPanel.notchHeight)
             }
         } else {
             switch self {
