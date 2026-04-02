@@ -3,9 +3,23 @@ import SwiftUI
 
 class IslandPanel: NSPanel {
     let stateManager: IslandStateManager
-    static let notchWidth: CGFloat = 180  // 14" MBP notch width in pt
-    static let notchHeight: CGFloat = 32  // notch height in pt
-    static let earWidth: CGFloat = 140    // fixed ear width
+
+    // Auto-detected from screen, with sensible fallbacks
+    static var notchWidth: CGFloat = 185
+    static var notchHeight: CGFloat = 32
+    static let earWidth: CGFloat = 140
+
+    /// Detect actual notch dimensions from the current screen
+    static func detectNotch() {
+        guard let screen = NSScreen.main,
+              let left = screen.auxiliaryTopLeftArea,
+              let right = screen.auxiliaryTopRightArea else {
+            return
+        }
+        notchWidth = right.minX - left.maxX
+        notchHeight = screen.safeAreaInsets.top
+        print("[DynamicIsland] Detected notch: \(notchWidth)pt × \(notchHeight)pt")
+    }
 
     init(stateManager: IslandStateManager) {
         self.stateManager = stateManager
@@ -14,12 +28,14 @@ class IslandPanel: NSPanel {
         let screenFrame = screen.frame
         let hasNotch = screen.safeAreaInsets.top > 0
 
-        // Wide enough for notch + generous ear space
+        // Detect actual notch size
+        if hasNotch { Self.detectNotch() }
+
         let totalWidth: CGFloat = hasNotch ? (Self.earWidth * 2 + Self.notchWidth) : 210
         let height: CGFloat = hasNotch ? Self.notchHeight : 38
 
         let x = round(screenFrame.midX - totalWidth / 2)
-        let y = screenFrame.maxY - height // Flush with top edge
+        let y = screenFrame.maxY - height
 
         let rect = NSRect(x: x, y: y, width: totalWidth, height: height)
 
