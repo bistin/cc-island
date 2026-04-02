@@ -1,0 +1,45 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Swift version
+        run: swift --version
+
+      - name: Build release
+        run: swift build -c release
+
+      - name: Create .app bundle
+        run: |
+          mkdir -p DynamicIsland.app/Contents/{MacOS,Resources}
+          cp .build/release/DynamicIsland DynamicIsland.app/Contents/MacOS/
+          cp hooks/island-hook.sh DynamicIsland.app/Contents/Resources/
+          cp hooks/island-hook.sh DynamicIsland.app/Contents/Resources/claude-hook.sh
+          cp Info.plist DynamicIsland.app/Contents/
+          codesign --force --deep --sign - DynamicIsland.app
+
+      - name: Zip app
+        run: zip -r DynamicIsland.zip DynamicIsland.app
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DynamicIsland
+          path: DynamicIsland.zip
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: DynamicIsland.zip
+          generate_release_notes: true
