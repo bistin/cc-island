@@ -174,19 +174,13 @@ struct LeftEarView: View {
                 .fill(.black)
 
             if isVisible, let event {
-                HStack(spacing: 6) {
-                    Text(event.icon)
-                        .font(.system(size: 13))
-                        .scaleEffect(appeared ? 1.0 : 0.3)
-
-                    Text(event.title)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                }
-                .padding(.leading, 10)
-                .padding(.trailing, 14)
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                Text(event.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .padding(.leading, 12)
+                    .padding(.trailing, 14)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
         }
         .onTapGesture { stateManager.expand() }
@@ -219,18 +213,18 @@ struct RightEarView: View {
 
                     if !event.subtitle.isEmpty {
                         Text(event.subtitle)
-                            .font(.system(size: 11, weight: .medium, design: .rounded))
-                            .foregroundColor(event.style.color)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundColor(event.style.color.opacity(0.9))
                             .lineLimit(1)
                     } else {
                         Circle()
                             .fill(event.style.color)
-                            .frame(width: 6, height: 6)
+                            .frame(width: 5, height: 5)
                     }
                 }
                 .padding(.leading, 14)
                 .padding(.trailing, 10)
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
         }
         .onTapGesture { stateManager.expand() }
@@ -247,17 +241,14 @@ struct ExpandedContentView: View {
         VStack(alignment: .leading, spacing: 8) {
             // Header row
             HStack {
-                Text(event.icon)
-                    .font(.system(size: 20))
-
                 VStack(alignment: .leading, spacing: 2) {
                     Text(event.title)
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.white)
 
                     if !event.subtitle.isEmpty {
                         Text(event.subtitle)
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .font(.system(size: 12))
                             .foregroundColor(.gray)
                     }
                 }
