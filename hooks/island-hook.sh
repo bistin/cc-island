@@ -196,7 +196,13 @@ case "$EVENT" in
 
     Stop)
         send "{\"type\":\"thinking_stop\"}"
-        send "{\"title\":\"Done\",\"style\":\"success\",\"duration\":3}"
+        # Check if Claude is asking a question
+        LAST_MSG=$(echo "$INPUT" | jq -r '.last_assistant_message // empty' | tail -c 200)
+        if echo "$LAST_MSG" | grep -qE '\?$|\？$'; then
+            send "{\"title\":\"Waiting\",\"subtitle\":\"Your turn\",\"style\":\"action\",\"duration\":15}"
+        else
+            send "{\"title\":\"Done\",\"style\":\"success\",\"duration\":3}"
+        fi
         ;;
 
     Error)
