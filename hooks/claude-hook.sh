@@ -3,7 +3,7 @@
 # Reads hook JSON from stdin, sends formatted events to Dynamic Island
 
 PORT="${DYNAMIC_ISLAND_PORT:-9423}"
-URL="http://localhost:$PORT/event"
+URL="http://127.0.0.1:$PORT/event"
 
 # Read JSON from stdin
 INPUT=$(cat)
