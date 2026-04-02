@@ -120,6 +120,9 @@ class IslandStateManager: ObservableObject {
     @Published var isHovered = false
     @Published var isThinking = false
 
+    /// Reference to server for sending permission responses
+    weak var server: LocalServer?
+
     private var eventQueue: [IslandEvent] = []
     private var dismissTimer: Timer?
     private var isProcessing = false
@@ -133,7 +136,7 @@ class IslandStateManager: ObservableObject {
 
             withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                 self.currentEvent = event
-                self.mode = .compact
+                self.mode = event.style == .action ? .expanded : .compact
             }
 
             if !event.persistent {

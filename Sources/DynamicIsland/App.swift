@@ -23,6 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         server = LocalServer(stateManager: stateManager)
         server.start()
+        stateManager.server = server
 
         NotificationMonitor.shared.start(stateManager: stateManager)
 

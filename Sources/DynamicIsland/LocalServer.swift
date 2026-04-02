@@ -21,9 +21,26 @@ class LocalServer {
     private var listener: NWListener?
     private weak var stateManager: IslandStateManager?
 
+    /// Pending permission response — hook script polls this
+    private var pendingResponse: String?
+    private let responseLock = NSLock()
+    private var responseWaiters: [CheckedContinuation<String, Never>] = []
+
     init(stateManager: IslandStateManager, port: UInt16 = 9423) {
         self.stateManager = stateManager
         self.port = port
+    }
+
+    /// Called from UI when user taps Allow/Deny
+    func setResponse(_ value: String) {
+        responseLock.lock()
+        pendingResponse = value
+        let waiters = responseWaiters
+        responseWaiters.removeAll()
+        responseLock.unlock()
+        for waiter in waiters {
+            waiter.resume(returning: value)
+        }
     }
 
     func start() {
@@ -62,32 +79,81 @@ class LocalServer {
         connection.start(queue: .global(qos: .userInitiated))
 
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, _, error in
-            defer { connection.cancel() }
-
-            if let error {
-                print("[DynamicIsland] Connection error: \(error)")
+            guard let self, let data, error == nil else {
+                connection.cancel()
                 return
             }
 
-            guard let data else { return }
-
-            // Parse the HTTP request to extract the JSON body
             let raw = String(data: data, encoding: .utf8) ?? ""
+            let firstLine = raw.components(separatedBy: "\r\n").first ?? ""
 
-            // Send HTTP response
-            let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 15\r\n\r\n{\"status\":\"ok\"}"
-            let responseData = response.data(using: .utf8)!
-            connection.send(content: responseData, completion: .contentProcessed { _ in })
+            if firstLine.contains("/response") {
+                // GET /response — hook script polls for user's permission choice
+                self.handleResponsePoll(connection)
+            } else if firstLine.contains("/event") {
+                // POST /event — normal event
+                self.sendHTTP(connection, body: "{\"status\":\"ok\"}")
+                if let bodyRange = raw.range(of: "\r\n\r\n") {
+                    let bodyString = String(raw[bodyRange.upperBound...])
+                    if let bodyData = bodyString.data(using: .utf8) {
+                        self.processEvent(bodyData)
+                    }
+                }
+            } else {
+                self.sendHTTP(connection, body: "{\"status\":\"ok\"}")
+            }
+        }
+    }
 
-            // Handle CORS preflight
-            if raw.hasPrefix("OPTIONS") { return }
+    private func sendHTTP(_ connection: NWConnection, body: String, statusCode: String = "200 OK") {
+        let response = "HTTP/1.1 \(statusCode)\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: \(body.utf8.count)\r\n\r\n\(body)"
+        connection.send(content: response.data(using: .utf8)!, completion: .contentProcessed { _ in
+            connection.cancel()
+        })
+    }
 
-            // Extract JSON body (after the blank line in HTTP request)
-            guard let bodyRange = raw.range(of: "\r\n\r\n") else { return }
-            let bodyString = String(raw[bodyRange.upperBound...])
+    /// Long-poll: waits up to 25s for user to tap Allow/Deny, then returns the choice
+    private func handleResponsePoll(_ connection: NWConnection) {
+        responseLock.lock()
+        if let response = pendingResponse {
+            pendingResponse = nil
+            responseLock.unlock()
+            sendHTTP(connection, body: "{\"decision\":\"\(response)\"}")
+            return
+        }
+        responseLock.unlock()
 
-            guard let bodyData = bodyString.data(using: .utf8) else { return }
-            self?.processEvent(bodyData)
+        // Long-poll: wait for response with timeout
+        Task {
+            let result = await withTaskGroup(of: String.self, returning: String.self) { group in
+                group.addTask {
+                    await withCheckedContinuation { continuation in
+                        self.responseLock.lock()
+                        // Check again in case it arrived
+                        if let response = self.pendingResponse {
+                            self.pendingResponse = nil
+                            self.responseLock.unlock()
+                            continuation.resume(returning: response)
+                        } else {
+                            self.responseWaiters.append(continuation)
+                            self.responseLock.unlock()
+                        }
+                    }
+                }
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: 25_000_000_000) // 25s timeout
+                    return "timeout"
+                }
+                let first = await group.next()!
+                group.cancelAll()
+                return first
+            }
+
+            if result == "timeout" {
+                self.sendHTTP(connection, body: "{\"decision\":\"timeout\"}")
+            } else {
+                self.sendHTTP(connection, body: "{\"decision\":\"\(result)\"}")
+            }
         }
     }
 

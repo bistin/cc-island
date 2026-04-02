@@ -173,6 +173,27 @@ case "$EVENT" in
         send "{\"title\":\"Action needed\",\"subtitle\":\"$(truncate "$MSG" 45)\",\"style\":\"action\"}"
         ;;
 
+    # ─── Permission request → show Allow/Deny, wait for response ──
+    PermissionRequest)
+        TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "tool"')
+        TOOL_DETAIL=$(echo "$INPUT" | jq -r '.tool_input.command // .tool_input.file_path // ""' | head -c 40)
+
+        # Send action event to island (will auto-expand with buttons)
+        send "{\"title\":\"Permission\",\"subtitle\":\"$TOOL_NAME: $TOOL_DETAIL\",\"style\":\"action\"}"
+
+        # Wait for user's choice (long-poll, up to 25s)
+        RESPONSE=$(curl -s --max-time 26 "http://127.0.0.1:$PORT/response" 2>/dev/null)
+        DECISION=$(echo "$RESPONSE" | jq -r '.decision // "timeout"')
+
+        if [ "$DECISION" = "allow" ]; then
+            echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
+        elif [ "$DECISION" = "deny" ]; then
+            echo '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied from Dynamic Island"}}}'
+        fi
+        # timeout = no output = defer to normal Claude Code permission flow
+        exit 0
+        ;;
+
     Stop)
         send "{\"type\":\"thinking_stop\"}"
         send "{\"title\":\"Done\",\"style\":\"success\",\"duration\":3}"

@@ -337,6 +337,43 @@ struct ExpandedContentView: View {
                     )
             }
 
+            // Permission buttons for action events
+            if event.style == .action {
+                HStack(spacing: 12) {
+                    Button(action: {
+                        stateManager.server?.setResponse("allow")
+                        stateManager.dismiss()
+                    }) {
+                        Text("Allow")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color(red: 0.2, green: 0.5, blue: 1.0))
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        stateManager.server?.setResponse("deny")
+                        stateManager.dismiss()
+                    }) {
+                        Text("Deny")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.8))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color.white.opacity(0.1))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
             // Progress bar
             if let progress = event.progress {
                 GeometryReader { geo in
