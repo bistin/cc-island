@@ -109,6 +109,9 @@ class IslandStateManager: ObservableObject {
             self.eventQueue.append(event)
             if !self.isProcessing {
                 self.processNext()
+            } else if self.currentEvent?.persistent == true {
+                // New event arrived — force dismiss the persistent one
+                self.dismiss()
             }
         }
     }
