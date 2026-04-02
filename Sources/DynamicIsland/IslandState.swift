@@ -106,40 +106,22 @@ class IslandStateManager: ObservableObject {
 
     func pushEvent(_ event: IslandEvent) {
         DispatchQueue.main.async {
-            self.eventQueue.append(event)
-            if !self.isProcessing {
-                self.processNext()
-            } else if self.currentEvent?.persistent == true {
-                // New event arrived — force dismiss the persistent one
-                self.dismiss()
+            // Don't queue — just show the latest event immediately
+            self.eventQueue.removeAll()
+            self.dismissTimer?.invalidate()
+            self.isProcessing = true
+
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                self.currentEvent = event
+                self.mode = .compact
             }
-        }
-    }
 
-    private func processNext() {
-        guard !eventQueue.isEmpty else {
-            isProcessing = false
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                mode = .hidden
-                currentEvent = nil
-            }
-            return
-        }
-
-        isProcessing = true
-        let event = eventQueue.removeFirst()
-
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-            currentEvent = event
-            mode = .compact
-        }
-
-        dismissTimer?.invalidate()
-        if !event.persistent {
-            dismissTimer = Timer.scheduledTimer(withTimeInterval: event.duration, repeats: false) { [weak self] _ in
-                DispatchQueue.main.async {
-                    guard let self, !self.isHovered else { return }
-                    self.dismiss()
+            if !event.persistent {
+                self.dismissTimer = Timer.scheduledTimer(withTimeInterval: event.duration, repeats: false) { [weak self] _ in
+                    DispatchQueue.main.async {
+                        guard let self, !self.isHovered else { return }
+                        self.dismiss()
+                    }
                 }
             }
         }
@@ -168,13 +150,10 @@ class IslandStateManager: ObservableObject {
 
     func dismiss() {
         dismissTimer?.invalidate()
+        isProcessing = false
         withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
             mode = .hidden
             currentEvent = nil
-        }
-        // Small delay before processing next
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            self.processNext()
         }
     }
 
