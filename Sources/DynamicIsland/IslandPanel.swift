@@ -16,7 +16,7 @@ class IslandPanel: NSPanel {
               let right = screen.auxiliaryTopRightArea else {
             return
         }
-        notchWidth = right.minX - left.maxX
+        notchWidth = right.minX - left.maxX - 1 // sub-pixel compensation
         notchHeight = screen.safeAreaInsets.top
         print("[DynamicIsland] Detected notch: \(notchWidth)pt × \(notchHeight)pt")
     }
