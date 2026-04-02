@@ -197,10 +197,15 @@ struct LeftEarView: View {
                         .lineLimit(1)
 
                     if let project = event.project {
-                        Text(project)
-                            .font(.system(size: 8, weight: .regular))
-                            .foregroundColor(.white.opacity(0.4))
-                            .lineLimit(1)
+                        HStack(spacing: 3) {
+                            Circle()
+                                .fill(event.projectColor ?? .white.opacity(0.4))
+                                .frame(width: 4, height: 4)
+                            Text(project)
+                                .font(.system(size: 8, weight: .regular))
+                                .foregroundColor(.white.opacity(0.4))
+                                .lineLimit(1)
+                        }
                     }
                 }
                 .padding(.leading, 12)

@@ -15,6 +15,23 @@ struct IslandEvent: Identifiable {
     let persistent: Bool  // if true, won't auto-dismiss
     let project: String?  // small project name label
 
+    /// Deterministic color derived from project name
+    var projectColor: Color? {
+        guard let project, !project.isEmpty else { return nil }
+        let hash = project.utf8.reduce(0) { ($0 &+ UInt32($1)) &* 31 }
+        let palette: [Color] = [
+            Color(red: 0.85, green: 0.65, blue: 0.45), // warm orange (default claude)
+            Color(red: 0.55, green: 0.75, blue: 1.0),  // sky blue
+            Color(red: 0.65, green: 0.9,  blue: 0.65), // mint green
+            Color(red: 0.9,  green: 0.6,  blue: 0.9),  // lavender
+            Color(red: 1.0,  green: 0.8,  blue: 0.4),  // gold
+            Color(red: 0.5,  green: 0.85, blue: 0.85), // teal
+            Color(red: 1.0,  green: 0.6,  blue: 0.6),  // coral
+            Color(red: 0.7,  green: 0.7,  blue: 1.0),  // periwinkle
+        ]
+        return palette[Int(hash) % palette.count]
+    }
+
     init(
         icon: String = "",
         title: String,
