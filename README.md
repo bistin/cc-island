@@ -1,6 +1,6 @@
 # cc-island
 
-把 iPhone 的 Dynamic Island 帶到 Mac 上。利用 MacBook 的瀏海（notch），在兩側顯示即時通知與狀態。
+把 iPhone 的 Dynamic Island 帶到 Mac 上。利用 MacBook 的瀏海（notch），在兩側即時顯示 AI coding agent 的動態。
 
 支援 **Claude Code**、**GitHub Copilot**、**OpenAI Codex** — 一個 hook 腳本三家通吃。
 
@@ -17,60 +17,150 @@
 - **HTTP API** — `POST http://127.0.0.1:9423/event`，任何工具都能整合
 - **自動適配** — 有瀏海用耳朵模式，沒瀏海用膠囊模式
 
-## Quick Start
+---
+
+## Installation
+
+### Option A: Download Release（推薦）
+
+1. 到 [Releases](https://github.com/bistin/cc-island/releases) 下載最新的 `DynamicIsland.zip`
+2. 解壓縮，把 `DynamicIsland.app` 拖到 `/Applications/`
+3. 打開 app：
+   ```bash
+   open /Applications/DynamicIsland.app
+   ```
+
+> App 不會出現在 Dock，它在背景運行。要關閉用 `pkill DynamicIsland`。
+
+### Option B: From Source
+
+需要 Xcode Command Line Tools（`xcode-select --install`）：
 
 ```bash
-swift build -c release
-.build/release/DynamicIsland
-```
+git clone https://github.com/bistin/cc-island.git
+cd cc-island
 
-### Install as App
-
-```bash
+# Build
 swift build -c release
+
+# Install as .app
 mkdir -p build/DynamicIsland.app/Contents/{MacOS,Resources}
 cp .build/release/DynamicIsland build/DynamicIsland.app/Contents/MacOS/
 cp hooks/island-hook.sh build/DynamicIsland.app/Contents/Resources/
 cp Info.plist build/DynamicIsland.app/Contents/
-
 codesign --force --deep --sign - build/DynamicIsland.app
 cp -R build/DynamicIsland.app /Applications/
+
+# Launch
+open /Applications/DynamicIsland.app
 ```
 
-## Hook Integration
+### Prerequisites
 
-一個 `island-hook.sh` 通用腳本，自動偵測 Claude Code / Copilot / Codex。
+- macOS 13.0+
+- `jq`（hook 腳本需要）：`brew install jq`
+
+---
+
+## Setup Hooks
+
+啟動 app 後，設定你使用的 AI tool 的 hooks。
 
 ### Claude Code
 
-加入 `~/.claude/settings.json`：
+在 `~/.claude/settings.json` 加入（如果已有 `hooks` 區塊，合併進去）：
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Bash|Edit|Write", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
+    ],
+    "Notification": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
+    ],
+    "UserPromptSubmit": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
+    ],
+    "SubagentStart": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
+    ],
+    "SubagentStop": [
+      { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
+    ]
+  }
+}
+```
+
+### GitHub Copilot (VS Code)
+
+複製設定到 `~/.copilot/hooks/hooks.json`：
+
+```bash
+mkdir -p ~/.copilot/hooks
+cp /Applications/DynamicIsland.app/Contents/Resources/island-hook.sh ~/.copilot/hooks/
+```
+
+然後建立 `~/.copilot/hooks/hooks.json`（或放在 repo 的 `.github/hooks/hooks.json`）：
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{ "type": "command", "command": "~/.copilot/hooks/island-hook.sh", "timeout": 5 }],
+    "PostToolUse": [{ "type": "command", "command": "~/.copilot/hooks/island-hook.sh", "timeout": 5 }],
+    "UserPromptSubmit": [{ "type": "command", "command": "~/.copilot/hooks/island-hook.sh", "timeout": 5 }],
+    "Stop": [{ "type": "command", "command": "~/.copilot/hooks/island-hook.sh", "timeout": 5 }],
+    "SessionStart": [{ "type": "command", "command": "~/.copilot/hooks/island-hook.sh", "timeout": 5 }]
+  }
+}
+```
+
+### OpenAI Codex
+
+建立 `~/.codex/hooks.json`：
 
 ```json
 {
   "hooks": {
     "PreToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }],
-    "PostToolUse": [{ "matcher": "Bash|Edit|Write", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }],
-    "Notification": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }],
-    "Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }],
+    "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }],
     "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }],
-    "SubagentStart": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }],
-    "SubagentStop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }]
+    "Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }],
+    "SessionStart": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }]
   }
 }
 ```
 
-### GitHub Copilot
-
-放到 `~/.copilot/hooks/hooks.json` 或 `.github/hooks/hooks.json`，格式參考 `hooks/copilot-hooks.json`。
-
-### OpenAI Codex
-
-放到 `~/.codex/hooks.json` 或 `.codex/hooks.json`，同樣格式。需在 `config.toml` 啟用：
+在 `~/.codex/config.toml` 啟用 hooks：
 
 ```toml
 [features]
 codex_hooks = true
 ```
+
+---
+
+## Verify It Works
+
+設定好之後，測試一下：
+
+```bash
+# 確認 app 在跑
+curl -s http://127.0.0.1:9423/event \
+  -d '{"title":"Hello","subtitle":"It works!","style":"success","duration":3}'
+```
+
+瀏海兩側應該會滑出 "Hello" / "It works!"。
+
+之後正常使用 Claude Code / Copilot / Codex，瀏海就會即時顯示 AI 正在做什麼。
+
+---
 
 ## What It Shows
 
@@ -80,13 +170,17 @@ codex_hooks = true
 | Read | Reading | filename |
 | Grep / Glob | Searching | pattern |
 | Edit | Editing | filename |
-| Write saved | Saved | filename |
+| File saved | Saved | filename |
 | Bash | Terminal | command |
 | Agent spawned | Agent | description |
 | Needs action | Action needed | message (pulsing blue) |
 | Done | Done | |
 
+---
+
 ## HTTP API
+
+任何工具都能透過 HTTP 發送事件：
 
 ```bash
 curl -X POST http://127.0.0.1:9423/event \
@@ -102,8 +196,23 @@ curl -X POST http://127.0.0.1:9423/event \
 | `duration` | number | `4.0` | Display seconds |
 | `detail` | string | `null` | Expanded view content |
 | `progress` | number | `null` | 0.0–1.0 progress bar |
-| `persistent` | bool | `false` | Don't auto-dismiss (true for `action` style) |
+| `persistent` | bool | `false` | Don't auto-dismiss (`true` for `action` style) |
 | `type` | string | `"custom"` | `thinking_start` / `thinking_stop` for glow control |
+
+---
+
+## Common Commands
+
+```bash
+# Launch
+open /Applications/DynamicIsland.app
+
+# Restart
+pkill DynamicIsland; open /Applications/DynamicIsland.app
+
+# Quit
+pkill DynamicIsland
+```
 
 ## Architecture
 
@@ -118,17 +227,10 @@ Sources/DynamicIsland/
 
 hooks/
 ├── island-hook.sh           # Universal hook (Claude Code + Copilot + Codex)
-├── claude-hook.sh           # Legacy Claude Code hook
+├── claude-hook.sh           # Legacy Claude Code only hook
 ├── claude-settings-example.json
 └── copilot-hooks.json       # Copilot hook config example
 ```
-
-## Requirements
-
-- macOS 13.0+
-- MacBook with notch (any M-series) — auto-detects notch dimensions
-- Also works without notch as a floating pill
-- `jq` required for hook scripts
 
 ## License
 
