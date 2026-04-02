@@ -5,7 +5,7 @@ class IslandPanel: NSPanel {
     let stateManager: IslandStateManager
     static let notchWidth: CGFloat = 180  // 14" MBP notch width in pt
     static let notchHeight: CGFloat = 32  // notch height in pt
-    static let earWidth: CGFloat = 180    // fixed ear width
+    static let earWidth: CGFloat = 140    // fixed ear width
 
     init(stateManager: IslandStateManager) {
         self.stateManager = stateManager

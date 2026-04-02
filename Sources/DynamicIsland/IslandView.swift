@@ -36,23 +36,21 @@ struct IslandRootView: View {
         // Right ear: leading edge flush with notch right edge
         // Use two half-width containers to guarantee the notch gap stays centered
         HStack(spacing: IslandPanel.notchWidth) {
-            // Left half — fixed width, ear aligned to right (touching notch)
             LeftEarView(
                 event: event,
                 isVisible: isVisible,
                 stateManager: stateManager
             )
-            .frame(width: IslandPanel.earWidth, height: IslandPanel.notchHeight, alignment: .trailing)
+            .frame(width: IslandPanel.earWidth, height: IslandPanel.notchHeight)
             .offset(x: isVisible ? 0 : IslandPanel.earWidth)
             .opacity(isVisible ? 1 : 0)
 
-            // Right half — fixed width, ear aligned to left (touching notch)
             RightEarView(
                 event: event,
                 isVisible: isVisible,
                 stateManager: stateManager
             )
-            .frame(width: IslandPanel.earWidth, height: IslandPanel.notchHeight, alignment: .leading)
+            .frame(width: IslandPanel.earWidth, height: IslandPanel.notchHeight)
             .offset(x: isVisible ? 0 : -IslandPanel.earWidth)
             .opacity(isVisible ? 1 : 0)
         }
@@ -187,7 +185,7 @@ struct LeftEarView: View {
                         .lineLimit(1)
                 }
                 .padding(.leading, 10)
-                .padding(.trailing, 14) // extra padding to clear concave area
+                .padding(.trailing, 14)
                 .transition(.opacity.combined(with: .scale(scale: 0.8)))
             }
         }
