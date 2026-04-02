@@ -13,6 +13,7 @@ struct IslandEvent: Identifiable {
     let detail: String?
     let progress: Double?
     let persistent: Bool  // if true, won't auto-dismiss
+    let project: String?  // small project name label
 
     init(
         icon: String = "",
@@ -22,7 +23,8 @@ struct IslandEvent: Identifiable {
         duration: TimeInterval = 4.0,
         detail: String? = nil,
         progress: Double? = nil,
-        persistent: Bool = false
+        persistent: Bool = false,
+        project: String? = nil
     ) {
         self.icon = icon
         self.title = title
@@ -32,6 +34,7 @@ struct IslandEvent: Identifiable {
         self.detail = detail
         self.progress = progress
         self.persistent = persistent
+        self.project = project
     }
 }
 

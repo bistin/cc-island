@@ -190,13 +190,22 @@ struct LeftEarView: View {
             }
 
             if isVisible, let event {
-                Text(event.title)
-                    .font(.system(size: 12, weight: isAction ? .semibold : .medium))
-                    .foregroundColor(isAction ? event.style.color : .white)
-                    .lineLimit(1)
-                    .padding(.leading, 12)
-                    .padding(.trailing, 14)
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(event.title)
+                        .font(.system(size: event.project != nil ? 11 : 12, weight: isAction ? .semibold : .medium))
+                        .foregroundColor(isAction ? event.style.color : .white)
+                        .lineLimit(1)
+
+                    if let project = event.project {
+                        Text(project)
+                            .font(.system(size: 8, weight: .regular))
+                            .foregroundColor(.white.opacity(0.4))
+                            .lineLimit(1)
+                    }
+                }
+                .padding(.leading, 12)
+                .padding(.trailing, 14)
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
         }
         .shadow(color: isAction ? (event?.style.color ?? .clear).opacity(actionPulse ? 0.6 : 0.1) : .clear, radius: 8)

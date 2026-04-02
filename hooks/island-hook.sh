@@ -8,10 +8,19 @@ URL="http://127.0.0.1:$PORT/event"
 
 INPUT=$(cat)
 
+# Extract project name from cwd
+CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
+PROJECT=$(basename "$CWD" 2>/dev/null)
+
 send() {
+    local payload="$1"
+    # Inject project name if available
+    if [ -n "$PROJECT" ]; then
+        payload=$(echo "$payload" | jq -c --arg p "$PROJECT" '. + {project: $p}')
+    fi
     curl -s -X POST "$URL" \
         -H "Content-Type: application/json" \
-        -d "$1" > /dev/null 2>&1 &
+        -d "$payload" > /dev/null 2>&1 &
 }
 
 basename_of() { echo "$1" | sed 's|.*/||'; }
