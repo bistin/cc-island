@@ -61,7 +61,8 @@ enum EventStyle: String, Codable {
     case warning
     case error
     case claude // Claude Code specific
-    case action // Needs user attention — persistent, pulsing
+    case action // Needs user attention — persistent, pulsing, with buttons
+    case reminder // Needs attention — pulsing, but no buttons
 
     var color: Color {
         switch self {
@@ -71,6 +72,7 @@ enum EventStyle: String, Codable {
         case .error: return .red
         case .claude: return Color(red: 0.85, green: 0.65, blue: 0.45)
         case .action: return Color(red: 0.4, green: 0.7, blue: 1.0) // bright blue
+        case .reminder: return Color(red: 0.4, green: 0.7, blue: 1.0)
         }
     }
 
@@ -82,6 +84,7 @@ enum EventStyle: String, Codable {
         case .error: return .red.opacity(0.4)
         case .claude: return Color(red: 0.85, green: 0.65, blue: 0.45).opacity(0.4)
         case .action: return Color(red: 0.4, green: 0.7, blue: 1.0).opacity(0.6)
+        case .reminder: return Color(red: 0.4, green: 0.7, blue: 1.0).opacity(0.6)
         }
     }
 }
@@ -136,7 +139,7 @@ class IslandStateManager: ObservableObject {
 
             withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                 self.currentEvent = event
-                self.mode = event.style == .action ? .expanded : .compact
+                self.mode = (event.style == .action) ? .expanded : .compact
             }
 
             if !event.persistent {
