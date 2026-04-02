@@ -58,6 +58,13 @@ struct IslandRootView: View {
         .animation(.spring(response: 0.45, dampingFraction: 0.78), value: isVisible)
         .clipped()
 
+        // Thinking pulse — glow BELOW the notch so it's not hidden by hardware
+        if stateManager.isThinking {
+            ThinkingPulseView()
+                .allowsHitTesting(false)
+                .transition(.opacity)
+        }
+
         // Expanded content below the notch
         if stateManager.mode == .expanded, let event {
             ExpandedContentView(event: event, stateManager: stateManager)
@@ -395,6 +402,33 @@ struct ExpandedPillView: View {
                 .shadow(color: event.style.glowColor, radius: 12, y: 4)
         )
         .onTapGesture { stateManager.collapse() }
+    }
+}
+
+// MARK: - Thinking Pulse
+
+struct ThinkingPulseView: View {
+    @State private var phase: CGFloat = 0
+
+    private let claudeColor = Color(red: 0.85, green: 0.65, blue: 0.45)
+
+    var body: some View {
+        // Glow bar right below the notch
+        RoundedRectangle(cornerRadius: 20)
+            .fill(claudeColor.opacity(0.4 * pulseValue))
+            .frame(width: IslandPanel.notchWidth - 20, height: 4)
+            .shadow(color: claudeColor.opacity(0.9 * pulseValue), radius: 14, y: 2)
+            .shadow(color: claudeColor.opacity(0.5 * pulseValue), radius: 6, y: 1)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
+                phase = 1
+            }
+        }
+    }
+
+    private var pulseValue: CGFloat {
+        // Smooth 0→1→0 breathing
+        return 0.3 + 0.7 * phase
     }
 }
 

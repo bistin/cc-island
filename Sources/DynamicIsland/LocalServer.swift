@@ -98,6 +98,21 @@ class LocalServer {
         }
 
         let type = json["type"] as? String ?? "custom"
+
+        // Handle thinking state
+        if type == "thinking_start" {
+            stateManager?.startThinking()
+            return
+        } else if type == "thinking_stop" {
+            stateManager?.stopThinking()
+            return
+        }
+
+        // Regular events also stop thinking
+        if type == "stop" {
+            stateManager?.stopThinking()
+        }
+
         let title = json["title"] as? String ?? type
         let subtitle = json["subtitle"] as? String ?? ""
         let detail = json["detail"] as? String

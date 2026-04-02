@@ -41,58 +41,56 @@ case "$EVENT" in
             Edit)
                 FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // "file"')
                 FNAME=$(basename_of "$FILE")
-                send "{\"icon\":\"✏️\",\"title\":\"Editing\",\"subtitle\":\"$FNAME\",\"style\":\"claude\",\"duration\":3}"
+                send "{\"title\":\"Editing\",\"subtitle\":\"$FNAME\",\"style\":\"claude\",\"duration\":3}"
                 ;;
             Write)
                 FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // "file"')
                 FNAME=$(basename_of "$FILE")
-                send "{\"icon\":\"📝\",\"title\":\"Writing\",\"subtitle\":\"$FNAME\",\"style\":\"claude\",\"duration\":3}"
+                send "{\"title\":\"Writing\",\"subtitle\":\"$FNAME\",\"style\":\"claude\",\"duration\":3}"
                 ;;
             Read)
                 FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // "file"')
                 FNAME=$(basename_of "$FILE")
-                send "{\"icon\":\"📖\",\"title\":\"Reading\",\"subtitle\":\"$FNAME\",\"style\":\"claude\",\"duration\":2}"
+                send "{\"title\":\"Reading\",\"subtitle\":\"$FNAME\",\"style\":\"claude\",\"duration\":2}"
                 ;;
             Bash)
                 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
                 DESC=$(echo "$INPUT" | jq -r '.tool_input.description // empty')
-                # Use description if available, otherwise truncate command
                 if [ -n "$DESC" ]; then
                     DISPLAY=$(truncate "$DESC" 35)
                 else
                     DISPLAY=$(truncate "$CMD" 35)
                 fi
-                send "{\"icon\":\"💻\",\"title\":\"Terminal\",\"subtitle\":\"$DISPLAY\",\"style\":\"claude\",\"duration\":3}"
+                send "{\"title\":\"Terminal\",\"subtitle\":\"$DISPLAY\",\"style\":\"claude\",\"duration\":3}"
                 ;;
             Grep)
                 PATTERN=$(echo "$INPUT" | jq -r '.tool_input.pattern // ""')
                 DISPLAY=$(truncate "$PATTERN" 30)
-                send "{\"icon\":\"🔍\",\"title\":\"Searching\",\"subtitle\":\"$DISPLAY\",\"style\":\"claude\",\"duration\":2}"
+                send "{\"title\":\"Searching\",\"subtitle\":\"$DISPLAY\",\"style\":\"claude\",\"duration\":2}"
                 ;;
             Glob)
                 PATTERN=$(echo "$INPUT" | jq -r '.tool_input.pattern // ""')
-                send "{\"icon\":\"📂\",\"title\":\"Finding files\",\"subtitle\":\"$PATTERN\",\"style\":\"claude\",\"duration\":2}"
+                send "{\"title\":\"Finding files\",\"subtitle\":\"$PATTERN\",\"style\":\"claude\",\"duration\":2}"
                 ;;
             Agent)
                 AGENT_TYPE=$(echo "$INPUT" | jq -r '.tool_input.subagent_type // "agent"')
                 DESC=$(echo "$INPUT" | jq -r '.tool_input.description // empty')
                 DISPLAY=$(truncate "${DESC:-$AGENT_TYPE}" 35)
-                send "{\"icon\":\"🤖\",\"title\":\"Agent\",\"subtitle\":\"$DISPLAY\",\"style\":\"claude\",\"duration\":3}"
+                send "{\"title\":\"Agent\",\"subtitle\":\"$DISPLAY\",\"style\":\"claude\",\"duration\":3}"
                 ;;
             WebSearch)
-                send "{\"icon\":\"🌐\",\"title\":\"Web Search\",\"style\":\"claude\",\"duration\":2}"
+                send "{\"title\":\"Web Search\",\"style\":\"claude\",\"duration\":2}"
                 ;;
             WebFetch)
-                send "{\"icon\":\"🌐\",\"title\":\"Fetching URL\",\"style\":\"claude\",\"duration\":2}"
+                send "{\"title\":\"Fetching URL\",\"style\":\"claude\",\"duration\":2}"
                 ;;
             TaskCreate|TaskUpdate)
                 SUBJECT=$(echo "$INPUT" | jq -r '.tool_input.subject // .tool_input.status // ""')
-                send "{\"icon\":\"📋\",\"title\":\"Task\",\"subtitle\":\"$SUBJECT\",\"style\":\"claude\",\"duration\":2}"
+                send "{\"title\":\"Task\",\"subtitle\":\"$SUBJECT\",\"style\":\"claude\",\"duration\":2}"
                 ;;
             *)
-                # MCP tools or other tools
                 DISPLAY=$(echo "$TOOL" | sed 's/mcp__[^_]*__//')
-                send "{\"icon\":\"🔧\",\"title\":\"$DISPLAY\",\"style\":\"claude\",\"duration\":2}"
+                send "{\"title\":\"$DISPLAY\",\"style\":\"claude\",\"duration\":2}"
                 ;;
         esac
         ;;
@@ -107,14 +105,14 @@ case "$EVENT" in
                 if echo "$RESULT" | grep -qi "error\|failed\|exit code [1-9]"; then
                     CMD=$(echo "$INPUT" | jq -r '.tool_input.description // .tool_input.command // ""')
                     DISPLAY=$(truncate "$CMD" 30)
-                    send "{\"icon\":\"⚠️\",\"title\":\"Command failed\",\"subtitle\":\"$DISPLAY\",\"style\":\"error\",\"duration\":4}"
+                    send "{\"title\":\"Command failed\",\"subtitle\":\"$DISPLAY\",\"style\":\"error\",\"duration\":4}"
                 fi
                 ;;
             Edit|Write)
                 # Show brief success for file changes
                 FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // "file"')
                 FNAME=$(basename_of "$FILE")
-                send "{\"icon\":\"✅\",\"title\":\"Saved\",\"subtitle\":\"$FNAME\",\"style\":\"success\",\"duration\":1.5}"
+                send "{\"title\":\"Saved\",\"subtitle\":\"$FNAME\",\"style\":\"success\",\"duration\":1.5}"
                 ;;
         esac
         ;;
@@ -123,34 +121,35 @@ case "$EVENT" in
     Notification)
         MSG=$(echo "$INPUT" | jq -r '.message // "Notification"')
         DISPLAY=$(truncate "$MSG" 45)
-        send "{\"icon\":\"🔔\",\"title\":\"Claude Code\",\"subtitle\":\"$DISPLAY\",\"style\":\"warning\",\"duration\":6}"
+        send "{\"title\":\"Claude Code\",\"subtitle\":\"$DISPLAY\",\"style\":\"warning\",\"duration\":6}"
         ;;
 
     # ─── Claude finished responding ────────────────────────
     Stop)
-        send "{\"icon\":\"✨\",\"title\":\"Done\",\"subtitle\":\"Claude finished\",\"style\":\"success\",\"duration\":3}"
+        send "{\"type\":\"thinking_stop\"}"
+        send "{\"title\":\"Done\",\"style\":\"success\",\"duration\":3}"
         ;;
 
     # ─── Subagent lifecycle ────────────────────────────────
     SubagentStart)
         AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // "agent"')
-        send "{\"icon\":\"🚀\",\"title\":\"Agent spawned\",\"subtitle\":\"$AGENT_TYPE\",\"style\":\"claude\",\"duration\":3}"
+        send "{\"title\":\"Agent\",\"subtitle\":\"$AGENT_TYPE\",\"style\":\"claude\",\"duration\":3}"
         ;;
 
     SubagentStop)
         AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // "agent"')
-        send "{\"icon\":\"🏁\",\"title\":\"Agent done\",\"subtitle\":\"$AGENT_TYPE\",\"style\":\"success\",\"duration\":2}"
+        send "{\"title\":\"Agent done\",\"subtitle\":\"$AGENT_TYPE\",\"style\":\"success\",\"duration\":2}"
         ;;
 
     # ─── Session start ─────────────────────────────────────
     SessionStart)
         SOURCE=$(echo "$INPUT" | jq -r '.source // "startup"')
-        send "{\"icon\":\"👋\",\"title\":\"Session\",\"subtitle\":\"$SOURCE\",\"style\":\"info\",\"duration\":2}"
+        send "{\"title\":\"Session\",\"subtitle\":\"$SOURCE\",\"style\":\"info\",\"duration\":2}"
         ;;
 
-    # ─── User submitted prompt ─────────────────────────────
+    # ─── User submitted prompt → start thinking pulse ──────
     UserPromptSubmit)
-        send "{\"icon\":\"💬\",\"title\":\"Thinking...\",\"style\":\"claude\",\"duration\":2}"
+        send "{\"type\":\"thinking_start\"}"
         ;;
 
 esac

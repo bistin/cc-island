@@ -72,9 +72,9 @@ enum IslandMode: Equatable {
         if hasNotch {
             let w = IslandPanel.earWidth * 2 + IslandPanel.notchWidth
             switch self {
-            case .compact: return CGSize(width: w, height: IslandPanel.notchHeight)
+            case .compact: return CGSize(width: w, height: IslandPanel.notchHeight + 30) // extra room for thinking glow
             case .expanded: return CGSize(width: w, height: IslandPanel.notchHeight + 130)
-            case .hidden: return CGSize(width: w, height: IslandPanel.notchHeight)
+            case .hidden: return CGSize(width: w, height: IslandPanel.notchHeight + 30)
             }
         } else {
             switch self {
@@ -92,6 +92,7 @@ class IslandStateManager: ObservableObject {
     @Published var mode: IslandMode = .hidden
     @Published var currentEvent: IslandEvent?
     @Published var isHovered = false
+    @Published var isThinking = false
 
     private var eventQueue: [IslandEvent] = []
     private var dismissTimer: Timer?
@@ -163,6 +164,22 @@ class IslandStateManager: ObservableObject {
         // Small delay before processing next
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.processNext()
+        }
+    }
+
+    func startThinking() {
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.6)) {
+                self.isThinking = true
+            }
+        }
+    }
+
+    func stopThinking() {
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.8)) {
+                self.isThinking = false
+            }
         }
     }
 }
