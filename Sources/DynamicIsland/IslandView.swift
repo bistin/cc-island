@@ -17,19 +17,29 @@ struct IslandRootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .onChange(of: stateManager.mode) { newMode in
-            updatePanelSize(mode: newMode, rows: stateManager.activeSessions.count)
+        .onChange(of: stateManager.mode) { _ in
+            updatePanelSize()
         }
-        .onChange(of: stateManager.activeSessions.count) { rows in
-            updatePanelSize(mode: stateManager.mode, rows: rows)
+        .onChange(of: stateManager.activeSessions.count) { _ in
+            updatePanelSize()
+        }
+        .onChange(of: stateManager.currentEvent?.id) { _ in
+            updatePanelSize()
         }
         .onHover { hovering in
             stateManager.isHovered = hovering
         }
     }
 
-    private func updatePanelSize(mode: IslandMode, rows: Int) {
-        panel?.updateSize(to: mode.size(hasNotch: hasNotch, sessionRows: rows))
+    private func updatePanelSize() {
+        let rows = stateManager.activeSessions.count
+        let detailLines = stateManager.currentEvent?.detail
+            .map { min($0.split(separator: "\n").count, 10) } ?? 0
+        panel?.updateSize(to: stateManager.mode.size(
+            hasNotch: hasNotch,
+            sessionRows: rows,
+            detailLines: detailLines
+        ))
     }
 
     // MARK: - Notch Layout (ears + expand below)
@@ -332,18 +342,10 @@ struct ExpandedContentView: View {
                 .buttonStyle(.plain)
             }
 
-            // Detail
+            // Detail — renders as a colored diff when lines start with "+ " / "- ",
+            // otherwise falls back to plain monospaced text
             if let detail = event.detail {
-                Text(detail)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.8))
-                    .lineLimit(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.white.opacity(0.08))
-                    )
+                DiffDetailView(text: detail)
             }
 
             // Permission buttons for action events
@@ -535,6 +537,47 @@ struct ThinkingPulseView: View {
     private var pulseValue: CGFloat {
         // Smooth 0→1→0 breathing
         return 0.3 + 0.7 * phase
+    }
+}
+
+// MARK: - Diff Detail (colored + / - lines)
+
+/// Renders `detail` line-by-line with diff coloring: lines starting with
+/// "- " → red, "+ " → green, everything else → muted white. Non-diff
+/// content renders as plain monospaced text.
+struct DiffDetailView: View {
+    let text: String
+
+    private var lines: [Substring] { text.split(separator: "\n", omittingEmptySubsequences: false) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(lines.prefix(10).enumerated()), id: \.offset) { _, line in
+                Text(line)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(color(for: line))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if lines.count > 10 {
+                Text("… +\(lines.count - 10) more")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white.opacity(0.08))
+        )
+    }
+
+    private func color(for line: Substring) -> Color {
+        if line.hasPrefix("- ") { return Color(red: 1.0, green: 0.55, blue: 0.55) }
+        if line.hasPrefix("+ ") { return Color(red: 0.55, green: 0.95, blue: 0.65) }
+        return .white.opacity(0.65)
     }
 }
 
