@@ -12,6 +12,14 @@ INPUT=$(cat)
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 PROJECT=$(basename "$CWD" 2>/dev/null)
 
+# If this event comes from a subagent, replace project label with agent type.
+# agent_id/agent_type are present in Claude Code subagent hook payloads.
+AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
+AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty')
+if [ -n "$AGENT_ID" ] && [ -n "$AGENT_TYPE" ]; then
+    PROJECT="↳ $AGENT_TYPE"
+fi
+
 send() {
     local payload="$1"
     # Inject project name if available
