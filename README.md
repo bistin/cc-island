@@ -12,7 +12,9 @@
 
 - **瀏海融合** — 自動偵測螢幕瀏海尺寸，凹弧貼合圓角，無縫銜接
 - **Thinking 脈動** — AI 思考中時瀏海下方呼吸光暈
-- **Action 提醒** — 需要你操作時藍色閃爍，不會自動消失
+- **Action 按鈕** — Claude Code 要你批准 Bash/Edit 時，直接在瀏海上 Allow/Deny，不用跳回 terminal
+- **Reminder 提醒** — 需要注意但沒選項時（例如 Claude 問問題）藍色脈動閃爍
+- **多 session 色標** — 同時跑多個 Claude Code，依 project 名稱自動配色區分；subagent 顯示為 `↳ agent_type`
 - **三家 AI 整合** — Claude Code / GitHub Copilot / OpenAI Codex hooks
 - **HTTP API** — `POST http://127.0.0.1:9423/event`，任何工具都能整合
 - **自動適配** — 有瀏海用耳朵模式，沒瀏海用膠囊模式
@@ -169,17 +171,20 @@ curl -s http://127.0.0.1:9423/event \
 
 ## What It Shows
 
-| Event | Left Ear | Right Ear |
-|-------|----------|-----------|
-| User sends prompt | | Thinking glow |
-| Read | Reading | filename |
-| Grep / Glob | Searching | pattern |
-| Edit | Editing | filename |
-| File saved | Saved | filename |
-| Bash | Terminal | command |
-| Agent spawned | Agent | description |
-| Needs action | Action needed | message (pulsing blue) |
-| Done | Done | |
+| Event | Left Ear | Right Ear | Style |
+|-------|----------|-----------|-------|
+| User sends prompt | | Thinking glow | pulse |
+| Read | Reading | filename | claude |
+| Grep / Glob | Searching | pattern | claude |
+| Edit | Editing | filename | claude |
+| File saved | Saved | filename | success |
+| Bash | Terminal | command | claude |
+| Agent spawned | Agent | description | claude |
+| Subagent activity | `↳ agent_type` label | tool details | claude |
+| Permission needed (Bash/Edit/Write) | Permission | tool: detail + Allow/Deny buttons | action |
+| Claude asks a question | Waiting | Your turn | reminder |
+| Notification (non-permission) | Claude Code | message | reminder |
+| Done | Done | | success |
 
 ---
 
@@ -197,7 +202,7 @@ curl -X POST http://127.0.0.1:9423/event \
 |-------|------|---------|-------------|
 | `title` | string | required | Left ear text |
 | `subtitle` | string | `""` | Right ear text |
-| `style` | string | `"claude"` | `info` / `success` / `warning` / `error` / `claude` / `action` |
+| `style` | string | `"claude"` | `info` / `success` / `warning` / `error` / `claude` / `action` / `reminder` |
 | `duration` | number | `4.0` | Display seconds |
 | `detail` | string | `null` | Expanded view content |
 | `progress` | number | `null` | 0.0–1.0 progress bar |
