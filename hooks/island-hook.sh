@@ -44,6 +44,38 @@ truncate() {
     if [ ${#str} -gt "$max" ]; then echo "${str:0:$max}…"; else echo "$str"; fi
 }
 
+# Trim a multi-line string to first N lines, each truncated to ~MAX chars,
+# with each line prefixed by $1. Appends "  (+K more)" if lines were dropped.
+diff_lines() {
+    local prefix="$1" max_lines="${2:-5}" max_chars="${3:-80}"
+    awk -v p="$prefix" -v maxl="$max_lines" -v maxc="$max_chars" '
+        NR <= maxl {
+            line = $0
+            if (length(line) > maxc) line = substr(line, 1, maxc) "…"
+            print p line
+        }
+        END {
+            if (NR > maxl) print "  (+" (NR - maxl) " more)"
+        }
+    '
+}
+
+# Build a unified "- old / + new" preview from two multi-line strings.
+# Emits plain text (newlines included); caller wraps in JSON via jq --arg.
+build_edit_diff() {
+    local old="$1" new="$2"
+    local old_part new_part
+    [ -n "$old" ] && old_part=$(printf '%s' "$old" | diff_lines "- ")
+    [ -n "$new" ] && new_part=$(printf '%s' "$new" | diff_lines "+ ")
+    if [ -n "$old_part" ] && [ -n "$new_part" ]; then
+        printf '%s\n%s\n' "$old_part" "$new_part"
+    elif [ -n "$old_part" ]; then
+        printf '%s\n' "$old_part"
+    elif [ -n "$new_part" ]; then
+        printf '%s\n' "$new_part"
+    fi
+}
+
 # ─── Detect source: Claude Code uses hook_event_name, Copilot uses toolName at root ───
 CC_EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
 CP_TOOL=$(echo "$INPUT" | jq -r '.toolName // empty')
@@ -122,11 +154,29 @@ case "$EVENT" in
         case "$TOOL" in
             Edit)
                 FNAME=$(basename_of "$(get_file)")
-                send "{\"title\":\"Editing\",\"subtitle\":\"${FNAME:-file}\",\"style\":\"claude\",\"duration\":3}"
+                OLD_STR=$(echo "$INPUT" | jq -r '.tool_input.old_string // ""')
+                NEW_STR=$(echo "$INPUT" | jq -r '.tool_input.new_string // ""')
+                # MultiEdit fallback — sniff first edit from the array
+                if [ -z "$OLD_STR" ] && [ -z "$NEW_STR" ]; then
+                    OLD_STR=$(echo "$INPUT" | jq -r '.tool_input.edits[0].old_string // ""')
+                    NEW_STR=$(echo "$INPUT" | jq -r '.tool_input.edits[0].new_string // ""')
+                fi
+                DIFF=$(build_edit_diff "$OLD_STR" "$NEW_STR")
+                PAYLOAD=$(jq -cn --arg s "${FNAME:-file}" --arg d "$DIFF" \
+                    '{title:"Editing", subtitle:$s, style:"claude", duration:3} + (if $d == "" then {} else {detail:$d} end)')
+                send "$PAYLOAD"
                 ;;
             Write|create)
                 FNAME=$(basename_of "$(get_file)")
-                send "{\"title\":\"Writing\",\"subtitle\":\"${FNAME:-file}\",\"style\":\"claude\",\"duration\":3}"
+                CONTENT=$(echo "$INPUT" | jq -r '.tool_input.content // ""')
+                [ -z "$CONTENT" ] && CONTENT=$(echo "$INPUT" | jq -r '.toolArgs // empty' | jq -r '.content // ""' 2>/dev/null)
+                DETAIL=""
+                if [ -n "$CONTENT" ]; then
+                    DETAIL=$(printf '%s' "$CONTENT" | diff_lines "+ ")
+                fi
+                PAYLOAD=$(jq -cn --arg s "${FNAME:-file}" --arg d "$DETAIL" \
+                    '{title:"Writing", subtitle:$s, style:"claude", duration:3} + (if $d == "" then {} else {detail:$d} end)')
+                send "$PAYLOAD"
                 ;;
             Read|view)
                 FNAME=$(basename_of "$(get_file)")

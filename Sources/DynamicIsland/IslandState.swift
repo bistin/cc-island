@@ -138,21 +138,24 @@ enum IslandMode: Equatable {
     case hidden
 
     /// Window size — compact hugs the notch, expanded drops below it.
-    /// `sessionRows` bumps the expanded height to fit the session tree.
-    func size(hasNotch: Bool, sessionRows: Int = 0) -> CGSize {
-        // Only render the tree when there's more than just main
+    /// `sessionRows` bumps the expanded height to fit the session tree;
+    /// `detailLines` bumps it to fit a multi-line diff detail block.
+    func size(hasNotch: Bool, sessionRows: Int = 0, detailLines: Int = 0) -> CGSize {
         let treeExtra: CGFloat = sessionRows >= 2 ? CGFloat(sessionRows) * 18 + 12 : 0
+        // Base 130 already reserves space for ~3 detail lines; only pay more when
+        // the diff is taller than that.
+        let detailExtra: CGFloat = detailLines > 3 ? CGFloat(detailLines - 3) * 14 : 0
         if hasNotch {
             let w = IslandPanel.earWidth * 2 + IslandPanel.notchWidth
             switch self {
-            case .compact: return CGSize(width: w, height: IslandPanel.notchHeight + 30) // extra room for thinking glow
-            case .expanded: return CGSize(width: w, height: IslandPanel.notchHeight + 130 + treeExtra)
+            case .compact: return CGSize(width: w, height: IslandPanel.notchHeight + 30)
+            case .expanded: return CGSize(width: w, height: IslandPanel.notchHeight + 130 + treeExtra + detailExtra)
             case .hidden: return CGSize(width: w, height: IslandPanel.notchHeight + 30)
             }
         } else {
             switch self {
             case .compact: return CGSize(width: 210, height: 38)
-            case .expanded: return CGSize(width: 380, height: 140 + treeExtra)
+            case .expanded: return CGSize(width: 380, height: 140 + treeExtra + detailExtra)
             case .hidden: return CGSize(width: 210, height: 38)
             }
         }
