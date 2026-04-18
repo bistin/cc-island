@@ -93,10 +93,15 @@ open /Applications/DynamicIsland.app
     ],
     "SubagentStop": [
       { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
+    ],
+    "PermissionRequest": [
+      { "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 30 }] }
     ]
   }
 }
 ```
+
+> The `PermissionRequest` matcher intentionally excludes read-only tools (`Read`, `Grep`, `Glob`). This avoids Allow/Deny popping up for trivial subagent actions — Claude Code's default permission flow handles them silently.
 
 ### GitHub Copilot (VS Code)
 

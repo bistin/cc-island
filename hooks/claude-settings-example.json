@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/bistin/app/swift-life/hooks/claude-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
             "timeout": 5
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/bistin/app/swift-life/hooks/claude-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
             "timeout": 5
           }
         ]
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/bistin/app/swift-life/hooks/claude-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
             "timeout": 5
           }
         ]
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/bistin/app/swift-life/hooks/claude-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
             "timeout": 5
           }
         ]
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/bistin/app/swift-life/hooks/claude-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
             "timeout": 5
           }
         ]
@@ -66,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/bistin/app/swift-life/hooks/claude-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
             "timeout": 5
           }
         ]
@@ -78,7 +78,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/bistin/app/swift-life/hooks/claude-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
             "timeout": 5
           }
         ]
@@ -90,8 +90,20 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/bistin/app/swift-life/hooks/claude-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
+            "timeout": 30
           }
         ]
       }
