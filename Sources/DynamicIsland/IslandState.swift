@@ -91,6 +91,45 @@ enum EventStyle: String, Codable {
     }
 }
 
+// MARK: - Session Channels
+
+/// Tracks activity for one concurrent agent (main session or subagent).
+/// The expanded view renders a row per active channel so you can see what
+/// multiple subagents are doing in parallel without them overwriting each
+/// other in the compact ear.
+struct SessionChannel: Identifiable {
+    let id: String            // "main" for parent session; agent_id for subagents
+    let agentType: String?    // nil for main
+    let project: String?      // cwd basename
+    var lastTitle: String
+    var lastSubtitle: String
+    var updatedAt: Date
+
+    var isMain: Bool { id == "main" }
+
+    var displayLabel: String {
+        if isMain { return project ?? "main" }
+        return "↳ \(agentType ?? "agent")"
+    }
+
+    /// Deterministic color from the channel id so the same subagent keeps
+    /// its color across events within a run.
+    var color: Color {
+        let hash = id.utf8.reduce(0) { ($0 &+ UInt32($1)) &* 31 }
+        let palette: [Color] = [
+            Color(red: 0.85, green: 0.65, blue: 0.45),
+            Color(red: 0.55, green: 0.75, blue: 1.0),
+            Color(red: 0.65, green: 0.9,  blue: 0.65),
+            Color(red: 0.9,  green: 0.6,  blue: 0.9),
+            Color(red: 1.0,  green: 0.8,  blue: 0.4),
+            Color(red: 0.5,  green: 0.85, blue: 0.85),
+            Color(red: 1.0,  green: 0.6,  blue: 0.6),
+            Color(red: 0.7,  green: 0.7,  blue: 1.0),
+        ]
+        return palette[Int(hash) % palette.count]
+    }
+}
+
 // MARK: - Display Mode
 
 enum IslandMode: Equatable {
@@ -98,19 +137,22 @@ enum IslandMode: Equatable {
     case expanded
     case hidden
 
-    /// Window size — compact hugs the notch, expanded drops below it
-    func size(hasNotch: Bool) -> CGSize {
+    /// Window size — compact hugs the notch, expanded drops below it.
+    /// `sessionRows` bumps the expanded height to fit the session tree.
+    func size(hasNotch: Bool, sessionRows: Int = 0) -> CGSize {
+        // Only render the tree when there's more than just main
+        let treeExtra: CGFloat = sessionRows >= 2 ? CGFloat(sessionRows) * 18 + 12 : 0
         if hasNotch {
             let w = IslandPanel.earWidth * 2 + IslandPanel.notchWidth
             switch self {
             case .compact: return CGSize(width: w, height: IslandPanel.notchHeight + 30) // extra room for thinking glow
-            case .expanded: return CGSize(width: w, height: IslandPanel.notchHeight + 130)
+            case .expanded: return CGSize(width: w, height: IslandPanel.notchHeight + 130 + treeExtra)
             case .hidden: return CGSize(width: w, height: IslandPanel.notchHeight + 30)
             }
         } else {
             switch self {
             case .compact: return CGSize(width: 210, height: 38)
-            case .expanded: return CGSize(width: 380, height: 140)
+            case .expanded: return CGSize(width: 380, height: 140 + treeExtra)
             case .hidden: return CGSize(width: 210, height: 38)
             }
         }
@@ -125,12 +167,19 @@ class IslandStateManager: ObservableObject {
     @Published var isHovered = false
     @Published var isThinking = false
 
+    /// Live view of main + subagent channels, sorted with main first
+    @Published var activeSessions: [SessionChannel] = []
+
     /// Reference to server for sending permission responses
     weak var server: LocalServer?
 
     private var eventQueue: [IslandEvent] = []
     private var dismissTimer: Timer?
     private var isProcessing = false
+    private var sessionSweepTimer: Timer?
+
+    /// Sessions idle longer than this are auto-expired (handles missed Stop hooks)
+    private let sessionIdleTimeout: TimeInterval = 90.0
 
     func pushEvent(_ event: IslandEvent) {
         DispatchQueue.main.async {
@@ -229,6 +278,69 @@ class IslandStateManager: ObservableObject {
         DispatchQueue.main.async {
             withAnimation(.easeInOut(duration: 0.8)) {
                 self.isThinking = false
+            }
+        }
+    }
+
+    // MARK: - Session tracking
+
+    /// Update (or create) a channel. Call on every event routed to a specific
+    /// agent or main session.
+    func updateSession(id: String, agentType: String?, project: String?, title: String, subtitle: String) {
+        DispatchQueue.main.async {
+            let channel = SessionChannel(
+                id: id,
+                agentType: agentType,
+                project: project,
+                lastTitle: title,
+                lastSubtitle: subtitle,
+                updatedAt: Date()
+            )
+            if let idx = self.activeSessions.firstIndex(where: { $0.id == id }) {
+                self.activeSessions[idx] = channel
+            } else {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    self.activeSessions.append(channel)
+                    self.sortSessions()
+                }
+            }
+            self.ensureSessionSweep()
+        }
+    }
+
+    /// Close a subagent channel explicitly (from SubagentStop hook)
+    func removeSession(id: String) {
+        DispatchQueue.main.async {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                self.activeSessions.removeAll { $0.id == id }
+            }
+        }
+    }
+
+    private func sortSessions() {
+        activeSessions.sort { a, b in
+            if a.isMain != b.isMain { return a.isMain }
+            return a.updatedAt > b.updatedAt
+        }
+    }
+
+    /// Periodically evict sessions that stopped pinging (missed Stop hook).
+    /// Main session stays forever — it's the reference point.
+    private func ensureSessionSweep() {
+        guard sessionSweepTimer == nil else { return }
+        sessionSweepTimer = Timer.scheduledTimer(withTimeInterval: 15.0, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let cutoff = Date().addingTimeInterval(-self.sessionIdleTimeout)
+                let before = self.activeSessions.count
+                self.activeSessions.removeAll { !$0.isMain && $0.updatedAt < cutoff }
+                if self.activeSessions.count != before {
+                    self.sortSessions()
+                }
+                if self.activeSessions.filter({ !$0.isMain }).isEmpty {
+                    self.sessionSweepTimer?.invalidate()
+                    self.sessionSweepTimer = nil
+                }
             }
         }
     }
