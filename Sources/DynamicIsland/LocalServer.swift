@@ -185,10 +185,18 @@ class LocalServer {
         let subtitle = json["subtitle"] as? String ?? ""
         let detail = json["detail"] as? String
         let styleName = json["style"] as? String ?? "claude"
-        let duration = json["duration"] as? Double ?? 4.0
         let progress = json["progress"] as? Double
-        let persistent = json["persistent"] as? Bool ?? (styleName == "action" || styleName == "reminder")
         let project = json["project"] as? String
+
+        // Progress semantics: in-progress events stay until complete,
+        // completion (progress >= 1.0) gets a short celebratory duration
+        let progressInFlight = progress.map { $0 < 1.0 } ?? false
+        let progressComplete = progress.map { $0 >= 1.0 } ?? false
+
+        let defaultDuration: Double = progressComplete ? 1.5 : 4.0
+        let duration = json["duration"] as? Double ?? defaultDuration
+        let persistent = json["persistent"] as? Bool
+            ?? (styleName == "action" || styleName == "reminder" || progressInFlight)
 
         let style = EventStyle(rawValue: styleName) ?? .claude
 

@@ -4,7 +4,7 @@ import SwiftUI
 // MARK: - Event Model
 
 struct IslandEvent: Identifiable {
-    let id = UUID()
+    let id: UUID
     let icon: String
     let title: String
     let subtitle: String
@@ -33,6 +33,7 @@ struct IslandEvent: Identifiable {
     }
 
     init(
+        id: UUID = UUID(),
         icon: String = "",
         title: String,
         subtitle: String = "",
@@ -43,6 +44,7 @@ struct IslandEvent: Identifiable {
         persistent: Bool = false,
         project: String? = nil
     ) {
+        self.id = id
         self.icon = icon
         self.title = title
         self.subtitle = subtitle
@@ -132,7 +134,39 @@ class IslandStateManager: ObservableObject {
 
     func pushEvent(_ event: IslandEvent) {
         DispatchQueue.main.async {
-            // Don't queue — just show the latest event immediately
+            // In-place progress update: same title + both carry progress →
+            // swap the event without re-animating entry or touching mode.
+            // Preserves user's expanded/compact choice across updates.
+            if let current = self.currentEvent,
+               current.title == event.title,
+               current.progress != nil,
+               event.progress != nil {
+                let merged = IslandEvent(
+                    id: current.id,
+                    icon: event.icon,
+                    title: event.title,
+                    subtitle: event.subtitle,
+                    style: event.style,
+                    duration: event.duration,
+                    detail: event.detail,
+                    progress: event.progress,
+                    persistent: event.persistent,
+                    project: event.project
+                )
+                self.currentEvent = merged
+                if !event.persistent {
+                    self.dismissTimer?.invalidate()
+                    self.dismissTimer = Timer.scheduledTimer(withTimeInterval: event.duration, repeats: false) { [weak self] _ in
+                        DispatchQueue.main.async {
+                            guard let self, !self.isHovered else { return }
+                            self.dismiss()
+                        }
+                    }
+                }
+                return
+            }
+
+            // Normal path: show the latest event immediately, replacing any queue
             self.eventQueue.removeAll()
             self.dismissTimer?.invalidate()
             self.isProcessing = true
