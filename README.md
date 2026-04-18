@@ -14,6 +14,7 @@
 - **Thinking 脈動** — AI 思考中時瀏海下方呼吸光暈
 - **Action 按鈕** — Claude Code 要你批准 Bash/Edit 時，直接在瀏海上 Allow/Deny，不用跳回 terminal
 - **Reminder 提醒** — 需要注意但沒選項時（例如 Claude 問問題）藍色脈動閃爍
+- **Progress 即時更新** — 長任務串流進度到瀏海，同 title POST 就會就地更新、不會重新動畫；附 `swift build` wrapper
 - **多 session 色標** — 同時跑多個 Claude Code，依 project 名稱自動配色區分；subagent 顯示為 `↳ agent_type`
 - **三家 AI 整合** — Claude Code / GitHub Copilot / OpenAI Codex hooks
 - **HTTP API** — `POST http://127.0.0.1:9423/event`，任何工具都能整合
@@ -184,6 +185,7 @@ curl -s http://127.0.0.1:9423/event \
 | Permission needed (Bash/Edit/Write) | Permission | tool: detail + Allow/Deny buttons | action |
 | Claude asks a question | Waiting | Your turn | reminder |
 | Notification (non-permission) | Claude Code | message | reminder |
+| Long task with progress | title | `N/M` + ring (updates in place) | claude |
 | Done | Done | | success |
 
 ---
@@ -205,9 +207,23 @@ curl -X POST http://127.0.0.1:9423/event \
 | `style` | string | `"claude"` | `info` / `success` / `warning` / `error` / `claude` / `action` / `reminder` |
 | `duration` | number | `4.0` | Display seconds |
 | `detail` | string | `null` | Expanded view content |
-| `progress` | number | `null` | 0.0–1.0 progress bar |
-| `persistent` | bool | `false` | Don't auto-dismiss (`true` for `action` style) |
+| `progress` | number | `null` | 0.0–1.0 progress bar / ring |
+| `persistent` | bool | `false` | Don't auto-dismiss (`true` for `action` / `reminder`, or when `progress < 1.0`) |
 | `type` | string | `"custom"` | `thinking_start` / `thinking_stop` for glow control |
+
+### Progress updates
+
+POST with the same `title` and `progress` swaps the progress in place without re-animating — use it to stream updates for a single long-running task. When `progress` reaches `1.0`, the event shows briefly then auto-dismisses.
+
+```bash
+for i in 0 25 50 75 100; do
+  curl -s -X POST http://127.0.0.1:9423/event \
+    -d "{\"title\":\"Upload\",\"subtitle\":\"$i/100\",\"progress\":$(awk "BEGIN{print $i/100}")}"
+  sleep 0.5
+done
+```
+
+`scripts/island-progress.sh` wraps this — pipe any command that prints `[N/M]` lines through it (e.g. `swift build 2>&1 | scripts/island-progress.sh Build`).
 
 ---
 

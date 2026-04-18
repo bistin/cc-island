@@ -386,6 +386,7 @@ struct ExpandedContentView: View {
                         RoundedRectangle(cornerRadius: 2)
                             .fill(event.style.color)
                             .frame(width: geo.size.width * progress, height: 4)
+                            .animation(.easeOut(duration: 0.25), value: progress)
                     }
                 }
                 .frame(height: 4)
@@ -537,6 +538,7 @@ struct ProgressRing: View {
                 .trim(from: 0, to: progress)
                 .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                .animation(.easeOut(duration: 0.25), value: progress)
         }
     }
 }
