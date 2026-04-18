@@ -177,8 +177,16 @@ case "$EVENT" in
         ;;
 
     Notification)
+        NOTIF_TYPE=$(echo "$INPUT" | jq -r '.notification_type // empty')
         MSG=$(echo "$INPUT" | jq -r '.message // "Notification"')
-        send "{\"title\":\"Action needed\",\"subtitle\":\"$(truncate "$MSG" 45)\",\"style\":\"action\"}"
+        # For permission prompts, skip — PermissionRequest hook will show real
+        # Allow/Deny buttons. Showing a second event here would confuse the user
+        # (fake buttons before real ones). For other types, use reminder
+        # (pulsing ears, no buttons) since this hook can't capture a decision.
+        if [ "$NOTIF_TYPE" = "permission_prompt" ]; then
+            exit 0
+        fi
+        send "{\"title\":\"Claude Code\",\"subtitle\":\"$(truncate "$MSG" 45)\",\"style\":\"reminder\"}"
         ;;
 
     # ─── Permission request → show Allow/Deny, wait for response ──
