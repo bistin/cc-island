@@ -34,9 +34,11 @@ class LocalServer {
     /// Called from UI when user taps Allow/Deny
     func setResponse(_ value: String) {
         responseLock.lock()
-        pendingResponse = value
         let waiters = responseWaiters
         responseWaiters.removeAll()
+        if waiters.isEmpty {
+            pendingResponse = value
+        }
         responseLock.unlock()
         for waiter in waiters {
             waiter.resume(returning: value)
