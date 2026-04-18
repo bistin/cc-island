@@ -18,11 +18,18 @@ struct IslandRootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onChange(of: stateManager.mode) { newMode in
-            panel?.updateSize(to: newMode.size(hasNotch: hasNotch))
+            updatePanelSize(mode: newMode, rows: stateManager.activeSessions.count)
+        }
+        .onChange(of: stateManager.activeSessions.count) { rows in
+            updatePanelSize(mode: stateManager.mode, rows: rows)
         }
         .onHover { hovering in
             stateManager.isHovered = hovering
         }
+    }
+
+    private func updatePanelSize(mode: IslandMode, rows: Int) {
+        panel?.updateSize(to: mode.size(hasNotch: hasNotch, sessionRows: rows))
     }
 
     // MARK: - Notch Layout (ears + expand below)
@@ -391,6 +398,12 @@ struct ExpandedContentView: View {
                 }
                 .frame(height: 4)
             }
+
+            // Active session tree — main + subagents
+            if stateManager.activeSessions.count >= 2 {
+                SessionTreeView(sessions: stateManager.activeSessions)
+                    .padding(.top, 4)
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -522,6 +535,65 @@ struct ThinkingPulseView: View {
     private var pulseValue: CGFloat {
         // Smooth 0→1→0 breathing
         return 0.3 + 0.7 * phase
+    }
+}
+
+// MARK: - Session Tree (main + active subagents)
+
+struct SessionTreeView: View {
+    let sessions: [SessionChannel]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Divider()
+                .overlay(Color.white.opacity(0.08))
+                .padding(.bottom, 2)
+
+            ForEach(sessions) { session in
+                SessionRow(session: session)
+            }
+        }
+    }
+}
+
+struct SessionRow: View {
+    let session: SessionChannel
+
+    private static let timeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
+
+    private var isFresh: Bool {
+        Date().timeIntervalSince(session.updatedAt) < 3.0
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(session.color)
+                .frame(width: 6, height: 6)
+                .opacity(isFresh ? 1.0 : 0.45)
+
+            Text(session.displayLabel)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white.opacity(isFresh ? 0.95 : 0.55))
+                .lineLimit(1)
+
+            Text(activityText)
+                .font(.system(size: 11, weight: .regular))
+                .foregroundColor(.white.opacity(isFresh ? 0.7 : 0.35))
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 4)
+        }
+    }
+
+    private var activityText: String {
+        if session.lastSubtitle.isEmpty { return session.lastTitle }
+        return "\(session.lastTitle) · \(session.lastSubtitle)"
     }
 }
 

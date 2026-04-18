@@ -176,6 +176,14 @@ class LocalServer {
             return
         }
 
+        // Subagent channel close — remove from session list, no island event
+        if type == "subagent_stop" {
+            if let agentId = json["agent_id"] as? String {
+                stateManager?.removeSession(id: agentId)
+            }
+            return
+        }
+
         // Regular events also stop thinking
         if type == "stop" {
             stateManager?.stopThinking()
@@ -217,6 +225,19 @@ class LocalServer {
             progress: progress,
             persistent: persistent,
             project: project
+        )
+
+        // Route into the session tree: main session when no agent_id, else
+        // keyed by agent_id so parallel subagents each get their own row.
+        let agentId = json["agent_id"] as? String
+        let agentType = json["agent_type"] as? String
+        let sessionId = agentId ?? "main"
+        stateManager?.updateSession(
+            id: sessionId,
+            agentType: agentType,
+            project: project,
+            title: title,
+            subtitle: subtitle
         )
 
         stateManager?.pushEvent(event)

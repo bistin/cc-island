@@ -12,19 +12,25 @@ INPUT=$(cat)
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 PROJECT=$(basename "$CWD" 2>/dev/null)
 
-# If this event comes from a subagent, replace project label with agent type.
 # agent_id/agent_type are present in Claude Code subagent hook payloads.
+# We keep the project label as the parent (cwd basename) and pass agent fields
+# separately so the island can track multiple concurrent subagents as their
+# own channels while the compact ear still shows the latest-pinging one via
+# a "↳ agent_type" override on the project label.
 AGENT_ID=$(echo "$INPUT" | jq -r '.agent_id // empty')
 AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // empty')
+DISPLAY_PROJECT="$PROJECT"
 if [ -n "$AGENT_ID" ] && [ -n "$AGENT_TYPE" ]; then
-    PROJECT="↳ $AGENT_TYPE"
+    DISPLAY_PROJECT="↳ $AGENT_TYPE"
 fi
 
 send() {
     local payload="$1"
-    # Inject project name if available
-    if [ -n "$PROJECT" ]; then
-        payload=$(echo "$payload" | jq -c --arg p "$PROJECT" '. + {project: $p}')
+    if [ -n "$DISPLAY_PROJECT" ]; then
+        payload=$(echo "$payload" | jq -c --arg p "$DISPLAY_PROJECT" '. + {project: $p}')
+    fi
+    if [ -n "$AGENT_ID" ]; then
+        payload=$(echo "$payload" | jq -c --arg id "$AGENT_ID" --arg t "$AGENT_TYPE" '. + {agent_id: $id, agent_type: $t}')
     fi
     curl -s -X POST "$URL" \
         -H "Content-Type: application/json" \
@@ -233,6 +239,9 @@ case "$EVENT" in
 
     SubagentStop)
         AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // "agent"')
+        # Close the subagent's channel in the island's session tree
+        send "{\"type\":\"subagent_stop\"}"
+        # Ephemeral "done" toast
         send "{\"title\":\"Agent done\",\"subtitle\":\"$AGENT_TYPE\",\"style\":\"success\",\"duration\":2}"
         ;;
 
