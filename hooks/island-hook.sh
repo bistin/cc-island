@@ -82,7 +82,7 @@ CP_TOOL=$(echo "$INPUT" | jq -r '.toolName // empty')
 CP_PROMPT=$(echo "$INPUT" | jq -r '.prompt // empty')
 CP_SOURCE=$(echo "$INPUT" | jq -r '.source // empty')
 CP_REASON=$(echo "$INPUT" | jq -r '.reason // empty')
-CP_ERROR=$(echo "$INPUT" | jq -r '.error.message // empty')
+CP_ERROR=$(echo "$INPUT" | jq -r '.error.message? // empty')
 
 # ─── Normalize to a common event + tool ───
 if [ -n "$CC_EVENT" ]; then
@@ -220,7 +220,7 @@ case "$EVENT" in
         ;;
 
     PostToolUseFailure)
-        ERR=$(echo "$INPUT" | jq -r '.error // empty' | head -c 60)
+        ERR=$(echo "$INPUT" | jq -r '.tool_error // .error // empty' | head -c 60)
         send "$(jq -cn --arg t "$TOOL" --arg e "$ERR" \
             '{title:"Tool failed",subtitle:(if $e!="" then $e else $t end),style:"error",duration:5}')"
         ;;
