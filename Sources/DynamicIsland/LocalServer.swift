@@ -93,18 +93,75 @@ class LocalServer {
                 // GET /response — hook script polls for user's permission choice
                 self.handleResponsePoll(connection)
             } else if firstLine.contains("/event") {
-                // POST /event — normal event
-                self.sendHTTP(connection, body: "{\"status\":\"ok\"}")
-                if let bodyRange = raw.range(of: "\r\n\r\n") {
-                    let bodyString = String(raw[bodyRange.upperBound...])
-                    if let bodyData = bodyString.data(using: .utf8) {
-                        self.processEvent(bodyData)
+                // POST /event — parse body first so invalid payloads get a
+                // real error response instead of a misleading 200 OK.
+                do {
+                    guard let bodyRange = raw.range(of: "\r\n\r\n") else {
+                        throw EventError.missingBody
                     }
+                    let bodyData = Data(raw[bodyRange.upperBound...].utf8)
+                    guard !bodyData.isEmpty else {
+                        throw EventError.missingBody
+                    }
+                    try self.processEvent(bodyData)
+                    self.sendHTTP(connection, body: "{\"status\":\"ok\"}")
+                } catch {
+                    let eventError = error as? EventError
+                    let code = eventError?.code ?? "internal_error"
+                    let message = eventError?.message ?? "\(error)"
+                    print("[DynamicIsland] /event error [\(code)]: \(message)")
+                    self.sendHTTP(
+                        connection,
+                        body: Self.errorBody(code: code, message: message),
+                        statusCode: "400 Bad Request"
+                    )
                 }
             } else {
                 self.sendHTTP(connection, body: "{\"status\":\"ok\"}")
             }
         }
+    }
+
+    /// Errors surfaced to POST /event callers so a bad payload no longer
+    /// gets swallowed into a silent 200 OK.
+    ///
+    /// `code` is the stable machine-readable identifier; `message` is a
+    /// human-friendly description that may vary by OS version / locale.
+    private enum EventError: Error {
+        case missingBody
+        case invalidJSON(String)
+        case invalidShape(String)
+
+        var code: String {
+            switch self {
+            case .missingBody: return "missing_body"
+            case .invalidJSON: return "invalid_json"
+            case .invalidShape: return "invalid_shape"
+            }
+        }
+
+        var message: String {
+            switch self {
+            case .missingBody: return "missing request body"
+            case .invalidJSON(let reason): return "invalid JSON: \(reason)"
+            case .invalidShape(let reason): return "invalid event shape: \(reason)"
+            }
+        }
+    }
+
+    /// Safely build a JSON error body. Runs fields through JSONSerialization
+    /// so embedded quotes / newlines don't corrupt the response.
+    private static func errorBody(code: String, message: String) -> String {
+        let payload: [String: String] = [
+            "status": "error",
+            "code": code,
+            "message": message,
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: payload),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return "{\"status\":\"error\",\"code\":\"\(code)\"}"
     }
 
     private func sendHTTP(_ connection: NWConnection, body: String, statusCode: String = "200 OK") {
@@ -159,10 +216,15 @@ class LocalServer {
         }
     }
 
-    private func processEvent(_ data: Data) {
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            print("[DynamicIsland] Invalid JSON")
-            return
+    private func processEvent(_ data: Data) throws {
+        let parsed: Any
+        do {
+            parsed = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw EventError.invalidJSON(error.localizedDescription)
+        }
+        guard let json = parsed as? [String: Any] else {
+            throw EventError.invalidShape("top-level value must be a JSON object")
         }
 
         let type = json["type"] as? String ?? "custom"
