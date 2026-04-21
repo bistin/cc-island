@@ -208,6 +208,13 @@ case "$EVENT" in
                 send "{\"title\":\"$DISPLAY\",\"style\":\"claude\",\"duration\":2}"
                 ;;
         esac
+
+        # Cache context for FIFO correlation with the next PermissionRequest
+        case "$TOOL" in
+            Edit|Write|Bash|MultiEdit|NotebookEdit)
+                printf '%s' "$INPUT" > "/tmp/di_pretool_${PROJECT:-default}.json"
+                ;;
+        esac
         ;;
 
     PostToolUse)
@@ -250,8 +257,34 @@ case "$EVENT" in
         TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "tool"')
         TOOL_DETAIL=$(echo "$INPUT" | jq -r '.tool_input.command // .tool_input.file_path // ""' | head -c 40)
 
+        # FIFO correlation: enrich dialog with context cached from the preceding PreToolUse
+        DIFF=""
+        CONTEXT_FILE="/tmp/di_pretool_${PROJECT:-default}.json"
+        if [ -f "$CONTEXT_FILE" ]; then
+            CACHED_TOOL=$(jq -r '.tool_name // empty' "$CONTEXT_FILE")
+            if [ "$CACHED_TOOL" = "$TOOL_NAME" ]; then
+                case "$TOOL_NAME" in
+                    Edit|MultiEdit)
+                        OLD_STR=$(jq -r '.tool_input.old_string // .tool_input.edits[0].old_string // ""' "$CONTEXT_FILE")
+                        NEW_STR=$(jq -r '.tool_input.new_string // .tool_input.edits[0].new_string // ""' "$CONTEXT_FILE")
+                        DIFF=$(build_edit_diff "$OLD_STR" "$NEW_STR")
+                        ;;
+                    Write)
+                        CONTENT=$(jq -r '.tool_input.content // ""' "$CONTEXT_FILE")
+                        [ -n "$CONTENT" ] && DIFF=$(printf '%s' "$CONTENT" | diff_lines "+ " 5)
+                        ;;
+                    Bash)
+                        [ -z "$TOOL_DETAIL" ] && \
+                            TOOL_DETAIL=$(jq -r '.tool_input.description // .tool_input.command // ""' "$CONTEXT_FILE" | head -c 40)
+                        ;;
+                esac
+            fi
+        fi
+
         # Send action event to island (will auto-expand with buttons)
-        send "{\"title\":\"Permission\",\"subtitle\":\"$TOOL_NAME: $TOOL_DETAIL\",\"style\":\"action\"}"
+        PAYLOAD=$(jq -cn --arg sub "$TOOL_NAME: $TOOL_DETAIL" --arg d "$DIFF" \
+            '{title:"Permission",subtitle:$sub,style:"action"} + (if $d=="" then {} else {detail:$d} end)')
+        send "$PAYLOAD"
 
         # Wait for user's choice (long-poll, up to 25s)
         RESPONSE=$(curl -s --max-time 26 "http://127.0.0.1:$PORT/response" 2>/dev/null)
