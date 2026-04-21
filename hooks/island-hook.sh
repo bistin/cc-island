@@ -211,25 +211,25 @@ case "$EVENT" in
         ;;
 
     PostToolUse)
-        # Check for failure
-        RESULT_TYPE=$(echo "$INPUT" | jq -r '.toolResult.resultType // empty')
-        if [ "$RESULT_TYPE" = "failure" ] || [ "$RESULT_TYPE" = "denied" ]; then
-            send "{\"title\":\"Failed\",\"subtitle\":\"$TOOL\",\"style\":\"error\",\"duration\":4}"
-        else
-            case "$TOOL" in
-                Bash)
-                    RESULT=$(echo "$INPUT" | jq -r '.tool_response // empty' 2>/dev/null)
-                    if echo "$RESULT" | grep -qi "error\|failed\|exit code [1-9]"; then
-                        CMD=$(echo "$INPUT" | jq -r '.tool_input.description // .tool_input.command // ""')
-                        send "{\"title\":\"Command failed\",\"subtitle\":\"$(truncate "$CMD" 30)\",\"style\":\"error\",\"duration\":4}"
-                    fi
-                    ;;
-                Edit|Write|create)
-                    FNAME=$(basename_of "$(get_file)")
-                    send "{\"title\":\"Saved\",\"subtitle\":\"${FNAME:-file}\",\"style\":\"success\",\"duration\":1.5}"
-                    ;;
-            esac
-        fi
+        case "$TOOL" in
+            Edit|Write|create)
+                FNAME=$(basename_of "$(get_file)")
+                send "{\"title\":\"Saved\",\"subtitle\":\"${FNAME:-file}\",\"style\":\"success\",\"duration\":1.5}"
+                ;;
+        esac
+        ;;
+
+    PostToolUseFailure)
+        ERR=$(echo "$INPUT" | jq -r '.error // empty' | head -c 60)
+        send "$(jq -cn --arg t "$TOOL" --arg e "$ERR" \
+            '{title:"Tool failed",subtitle:(if $e!="" then $e else $t end),style:"error",duration:5}')"
+        ;;
+
+    PermissionDenied)
+        TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // "tool"')
+        REASON=$(echo "$INPUT" | jq -r '.denial_reason // empty' | head -c 60)
+        send "$(jq -cn --arg t "$TOOL_NAME" --arg r "$REASON" \
+            '{title:"Denied",subtitle:(if $r!="" then $r else $t end),style:"warning",duration:4}')"
         ;;
 
     Notification)
@@ -266,6 +266,13 @@ case "$EVENT" in
         exit 0
         ;;
 
+    StopFailure)
+        send "{\"type\":\"thinking_stop\"}"
+        ERR=$(echo "$INPUT" | jq -r '.stop_error // empty' | head -c 60)
+        send "$(jq -cn --arg e "${ERR:-API error}" \
+            '{title:"Error",subtitle:$e,style:"error",duration:6}')"
+        ;;
+
     Stop)
         send "{\"type\":\"thinking_stop\"}"
         # Check if Claude is asking a question
@@ -298,6 +305,18 @@ case "$EVENT" in
     SessionStart)
         SOURCE=$(echo "$INPUT" | jq -r '.source // "startup"')
         send "{\"title\":\"Session\",\"subtitle\":\"$SOURCE\",\"style\":\"info\",\"duration\":2}"
+        ;;
+
+    SessionEnd)
+        send "{\"type\":\"thinking_stop\"}"
+        ;;
+
+    PreCompact)
+        send "{\"title\":\"Compacting\",\"subtitle\":\"context\",\"style\":\"info\",\"duration\":2}"
+        ;;
+
+    PostCompact)
+        send "{\"title\":\"Compacted\",\"style\":\"success\",\"duration\":2}"
         ;;
 
     UserPromptSubmit)
