@@ -215,7 +215,7 @@ final class PayloadBuilderTests: XCTestCase {
 
     // MARK: - Stop (asking-question detection)
 
-    func testStop_questionMark_emitsWaiting() {
+    func testStop_questionMark_emitsWaitingWithQuestion() {
         let p = plan([
             "hook_event_name": "Stop",
             "last_assistant_message": "Would you like me to continue?",
@@ -223,7 +223,89 @@ final class PayloadBuilderTests: XCTestCase {
         ])
         let body = buildStopPayload(p)
         XCTAssertEqual(body["title"] as? String, "Waiting")
+        XCTAssertEqual(body["subtitle"] as? String, "Would you like me to continue?")
         XCTAssertEqual(body["style"] as? String, "reminder")
+        XCTAssertEqual(body["detail"] as? String, "Would you like me to continue?")
+    }
+
+    func testStop_multilineMessage_subtitleIsLastLine() {
+        let msg = "I've made the changes to foo.swift.\n\nShould I run the tests?"
+        let p = plan([
+            "hook_event_name": "Stop",
+            "last_assistant_message": msg,
+            "cwd": "/tmp",
+        ])
+        let body = buildStopPayload(p)
+        XCTAssertEqual(body["subtitle"] as? String, "Should I run the tests?")
+        XCTAssertEqual(body["detail"] as? String, msg)
+    }
+
+    func testStop_listFollowedByQuestion_takesLastLine() {
+        let msg = "Done with all 5 changes:\n- a\n- b\n- c\nWant me to commit?"
+        let p = plan([
+            "hook_event_name": "Stop",
+            "last_assistant_message": msg,
+            "cwd": "/tmp",
+        ])
+        XCTAssertEqual(buildStopPayload(p)["subtitle"] as? String, "Want me to commit?")
+    }
+
+    func testStop_longQuestion_truncatedTo50() {
+        // A single sentence with no internal punctuation — exercises the
+        // 50-char clip after sentence extraction.
+        let msg = String(repeating: "very ", count: 30)
+            + "long question with no internal punctuation?"
+        let p = plan([
+            "hook_event_name": "Stop",
+            "last_assistant_message": msg,
+            "cwd": "/tmp",
+        ])
+        let sub = buildStopPayload(p)["subtitle"] as? String ?? ""
+        XCTAssertLessThanOrEqual(sub.count, 51)
+        XCTAssertTrue(sub.hasSuffix("…"))
+    }
+
+    func testExtractLastQuestion_singleLine() {
+        XCTAssertEqual(extractLastQuestion(from: "Hello?"), "Hello?")
+    }
+
+    func testExtractLastQuestion_multilineLastNonEmpty() {
+        XCTAssertEqual(
+            extractLastQuestion(from: "First\n\nLast?"),
+            "Last?"
+        )
+    }
+
+    func testExtractLastQuestion_trailingWhitespace() {
+        XCTAssertEqual(
+            extractLastQuestion(from: "Question?  \n\n  "),
+            "Question?"
+        )
+    }
+
+    func testExtractLastQuestion_empty() {
+        XCTAssertEqual(extractLastQuestion(from: ""), "")
+    }
+
+    func testExtractLastQuestion_chinesePeriodAsSeparator() {
+        XCTAssertEqual(
+            extractLastQuestion(from: "送出去了。看起來怎樣？"),
+            "看起來怎樣？"
+        )
+    }
+
+    func testExtractLastQuestion_englishPeriodSeparator() {
+        XCTAssertEqual(
+            extractLastQuestion(from: "First sentence. Second one?"),
+            "Second one?"
+        )
+    }
+
+    func testExtractLastQuestion_mixedPunctuation_takesAfterLastTerminator() {
+        XCTAssertEqual(
+            extractLastQuestion(from: "Made the change! Want to commit?"),
+            "Want to commit?"
+        )
     }
 
     func testStop_declarativeMessage_emitsDone() {

@@ -186,14 +186,50 @@ public func buildStopPayload(_ plan: HookPlan) -> [String: Any] {
     let lastMsg = (plan.payload["last_assistant_message"] as? String) ?? ""
     let tail = String(lastMsg.suffix(200))
     if tail.range(of: #"[?？]\s*$"#, options: .regularExpression) != nil {
-        return plan.decorate([
-            "title": "Waiting", "subtitle": "Your turn", "style": "reminder",
-        ])
+        let question = extractLastQuestion(from: lastMsg)
+        var p: [String: Any] = [
+            "title": "Waiting",
+            "subtitle": truncate(question.isEmpty ? "Your turn" : question, 50),
+            "style": "reminder",
+        ]
+        if !lastMsg.isEmpty { p["detail"] = lastMsg }
+        return plan.decorate(p)
     } else {
         return plan.decorate([
             "title": "Done", "style": "success", "duration": 3,
         ])
     }
+}
+
+/// Pulls the final sentence from an assistant message — typically the question
+/// Claude is asking. Splits at sentence terminators (`.`, `!`, `?`, fullwidth
+/// `。`, `！`, `？`) and newlines so a multi-sentence single-line message gets
+/// the trailing sentence isolated rather than the whole message.
+public func extractLastQuestion(from text: String) -> String {
+    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmed.isEmpty { return "" }
+
+    let terminators: Set<Character> = [".", "!", "?", "。", "！", "？", "\n"]
+
+    // Skip the trailing terminator so the reverse walk doesn't treat it as
+    // the sentence separator (we want the PRIOR one).
+    var idx = trimmed.endIndex
+    if let lastChar = trimmed.last, terminators.contains(lastChar) {
+        idx = trimmed.index(before: idx)
+    }
+
+    while idx > trimmed.startIndex {
+        let prev = trimmed.index(before: idx)
+        if terminators.contains(trimmed[prev]) {
+            var startIdx = idx
+            while startIdx < trimmed.endIndex && trimmed[startIdx].isWhitespace {
+                startIdx = trimmed.index(after: startIdx)
+            }
+            return String(trimmed[startIdx...]).trimmingCharacters(in: .whitespaces)
+        }
+        idx = prev
+    }
+    return trimmed
 }
 
 public func buildStopFailurePayload(_ plan: HookPlan) -> [String: Any] {
