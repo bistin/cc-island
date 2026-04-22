@@ -201,10 +201,21 @@ struct LeftEarView: View {
             LeftEarShape(outerRadius: 16, notchRadius: 10)
                 .fill(.black)
 
-            // Pulsing border for action/reminder events
+            // Source-color stripe down the leading (outer) edge.
+            // Clipped to the ear shape so it follows the rounded outer corner.
+            if let color = event?.projectColor, isVisible {
+                Rectangle()
+                    .fill(color)
+                    .frame(width: 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .mask(LeftEarShape(outerRadius: 16, notchRadius: 10))
+            }
+
+            // Pulsing border for action/reminder events — uses source color when known
             if isPulsing {
+                let pulseColor = event?.projectColor ?? event!.style.color
                 LeftEarShape(outerRadius: 16, notchRadius: 10)
-                    .stroke(event!.style.color.opacity(actionPulse ? 0.8 : 0.2), lineWidth: 1.5)
+                    .stroke(pulseColor.opacity(actionPulse ? 0.8 : 0.2), lineWidth: 1.5)
             }
 
             if isVisible, let event {
@@ -231,7 +242,12 @@ struct LeftEarView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
         }
-        .shadow(color: isPulsing ? (event?.style.color ?? .clear).opacity(actionPulse ? 0.6 : 0.1) : .clear, radius: 8)
+        .shadow(
+            color: isPulsing
+                ? (event?.projectColor ?? event?.style.color ?? .clear).opacity(actionPulse ? 0.6 : 0.1)
+                : .clear,
+            radius: 8
+        )
         .onTapGesture {
             if isPulsing { stateManager.dismiss() } else { stateManager.expand() }
         }
@@ -266,9 +282,19 @@ struct RightEarView: View {
             RightEarShape(outerRadius: 16, notchRadius: 10)
                 .fill(.black)
 
+            // Source-color stripe down the trailing (outer) edge
+            if let color = event?.projectColor, isVisible {
+                Rectangle()
+                    .fill(color)
+                    .frame(width: 4)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .mask(RightEarShape(outerRadius: 16, notchRadius: 10))
+            }
+
             if isPulsing {
+                let pulseColor = event?.projectColor ?? event!.style.color
                 RightEarShape(outerRadius: 16, notchRadius: 10)
-                    .stroke(event!.style.color.opacity(actionPulse ? 0.8 : 0.2), lineWidth: 1.5)
+                    .stroke(pulseColor.opacity(actionPulse ? 0.8 : 0.2), lineWidth: 1.5)
             }
 
             if isVisible, let event {
@@ -294,7 +320,12 @@ struct RightEarView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             }
         }
-        .shadow(color: isPulsing ? (event?.style.color ?? .clear).opacity(actionPulse ? 0.6 : 0.1) : .clear, radius: 8)
+        .shadow(
+            color: isPulsing
+                ? (event?.projectColor ?? event?.style.color ?? .clear).opacity(actionPulse ? 0.6 : 0.1)
+                : .clear,
+            radius: 8
+        )
         .onTapGesture {
             if isPulsing { stateManager.dismiss() } else { stateManager.expand() }
         }

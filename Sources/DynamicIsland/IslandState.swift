@@ -14,13 +14,19 @@ struct IslandEvent: Identifiable {
     let progress: Double?
     let persistent: Bool  // if true, won't auto-dismiss
     let project: String?  // small project name label
+    let source: String?   // "claude" / "copilot" / "codex" — drives color
 
-    /// Deterministic color derived from project name
+    /// Color signaling event source. Falls back to a deterministic
+    /// project-name hash when the source isn't known, so legacy callers
+    /// (e.g. plain HTTP POST without source) still get visual variety.
     var projectColor: Color? {
+        if let source, let color = Self.sourceColor(source) {
+            return color
+        }
         guard let project, !project.isEmpty else { return nil }
         let hash = project.utf8.reduce(0) { ($0 &+ UInt32($1)) &* 31 }
         let palette: [Color] = [
-            Color(red: 0.85, green: 0.65, blue: 0.45), // warm orange (default claude)
+            Color(red: 0.85, green: 0.65, blue: 0.45), // warm orange
             Color(red: 0.55, green: 0.75, blue: 1.0),  // sky blue
             Color(red: 0.65, green: 0.9,  blue: 0.65), // mint green
             Color(red: 0.9,  green: 0.6,  blue: 0.9),  // lavender
@@ -30,6 +36,15 @@ struct IslandEvent: Identifiable {
             Color(red: 0.7,  green: 0.7,  blue: 1.0),  // periwinkle
         ]
         return palette[Int(hash) % palette.count]
+    }
+
+    private static func sourceColor(_ source: String) -> Color? {
+        switch source.lowercased() {
+        case "claude":  return Color(red: 0.85, green: 0.65, blue: 0.45) // warm orange
+        case "copilot": return Color(red: 0.65, green: 0.50, blue: 0.95) // GitHub violet
+        case "codex":   return Color(red: 0.30, green: 0.80, blue: 0.60) // OpenAI green
+        default: return nil
+        }
     }
 
     init(
@@ -42,7 +57,8 @@ struct IslandEvent: Identifiable {
         detail: String? = nil,
         progress: Double? = nil,
         persistent: Bool = false,
-        project: String? = nil
+        project: String? = nil,
+        source: String? = nil
     ) {
         self.id = id
         self.icon = icon
@@ -54,6 +70,7 @@ struct IslandEvent: Identifiable {
         self.progress = progress
         self.persistent = persistent
         self.project = project
+        self.source = source
     }
 }
 

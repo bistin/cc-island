@@ -257,6 +257,7 @@ class LocalServer {
         let styleName = json["style"] as? String ?? "claude"
         let progress = json["progress"] as? Double
         let project = json["project"] as? String
+        let source = json["source"] as? String
 
         // Progress semantics: in-progress events stay until complete,
         // completion (progress >= 1.0) gets a short celebratory duration
@@ -286,7 +287,8 @@ class LocalServer {
             detail: detail,
             progress: progress,
             persistent: persistent,
-            project: project
+            project: project,
+            source: source
         )
 
         // Route into the session tree: main session when no agent_id, else
