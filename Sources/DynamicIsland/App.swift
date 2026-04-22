@@ -94,6 +94,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var panel: IslandPanel!
     var stateManager = IslandStateManager()
     var server: LocalServer!
+    var statusItem: NSStatusItem!
 
     private static let hookChoiceKey = "hookInstallChoice"
 
@@ -107,6 +108,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         NotificationMonitor.shared.start(stateManager: stateManager)
 
+        setupStatusBarItem()
+
         // First-run prompt (or silent sync for returning users) — Claude Code only.
         // Copilot setup is CLI-only via --install-copilot-hooks.
         maybePromptForHookInstall()
@@ -118,6 +121,66 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             style: .info,
             duration: 3.0
         ))
+    }
+
+    // MARK: - Menu bar status item
+
+    private func setupStatusBarItem() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.button?.image = makeIslandIcon()
+
+        let menu = NSMenu()
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let header = NSMenuItem(title: "Dynamic Island v\(version)", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(
+            title: "Reinstall Claude Code Hooks",
+            action: #selector(reinstallHooks),
+            keyEquivalent: ""))
+        menu.addItem(.separator())
+        let quit = NSMenuItem(
+            title: "Quit Dynamic Island",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q")
+        menu.addItem(quit)
+        statusItem.menu = menu
+    }
+
+    /// A horizontal pill — the Dynamic Island silhouette in compact form.
+    /// Drawn inside a 22×22 canvas so the click target matches the menu bar's
+    /// standard hit area, with the pill itself centered for visual proportion.
+    /// Template-rendered so it adapts to light/dark menu bars.
+    private func makeIslandIcon() -> NSImage {
+        let canvas = NSSize(width: 22, height: 22)
+        let pillSize = NSSize(width: 18, height: 8)
+        let image = NSImage(size: canvas, flipped: false) { _ in
+            let pillRect = NSRect(
+                x: (canvas.width  - pillSize.width)  / 2,
+                y: (canvas.height - pillSize.height) / 2,
+                width: pillSize.width,
+                height: pillSize.height
+            )
+            let path = NSBezierPath(
+                roundedRect: pillRect,
+                xRadius: pillSize.height / 2,
+                yRadius: pillSize.height / 2
+            )
+            NSColor.labelColor.setFill()
+            path.fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    @objc private func reinstallHooks() {
+        let result = HookInstaller.install(target: .claudeCode)
+        reportInstallResult(result)
+        if case .installed = result {
+            UserDefaults.standard.set("installed", forKey: Self.hookChoiceKey)
+        }
     }
 
     private func maybePromptForHookInstall() {
