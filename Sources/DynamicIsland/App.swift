@@ -5,10 +5,14 @@ import SwiftUI
 struct DynamicIslandApp {
     static func main() {
         let args = CommandLine.arguments
-        if args.contains("--install-hooks")           { runInstallCLI(target: .claudeCode);   exit(0) }
-        if args.contains("--install-copilot-hooks")   { runInstallCLI(target: .copilot);      exit(0) }
-        if args.contains("--uninstall-hooks")         { runUninstallCLI(target: .claudeCode); exit(0) }
-        if args.contains("--uninstall-copilot-hooks") { runUninstallCLI(target: .copilot);    exit(0) }
+        if args.contains("--install-hooks")   { runInstallCLI(target: .claudeCode);   exit(0) }
+        if args.contains("--uninstall-hooks") { runUninstallCLI(target: .claudeCode); exit(0) }
+        if let repo = copilotRepoPath(in: args, after: "--install-copilot-hooks") {
+            runInstallCLI(target: .copilot(repoPath: repo)); exit(0)
+        }
+        if let repo = copilotRepoPath(in: args, after: "--uninstall-copilot-hooks") {
+            runUninstallCLI(target: .copilot(repoPath: repo)); exit(0)
+        }
         if args.contains("--help") || args.contains("-h") { printUsage(); exit(0) }
 
         let app = NSApplication.shared
@@ -16,6 +20,26 @@ struct DynamicIslandApp {
         app.delegate = delegate
         app.setActivationPolicy(.accessory) // Hide from dock
         app.run()
+    }
+
+    /// Returns the repo path for the Copilot CLI flag, or nil if the flag isn't present.
+    /// Accepts an optional path after the flag; defaults to CWD. Rejects missing/invalid dirs.
+    private static func copilotRepoPath(in args: [String], after flag: String) -> URL? {
+        guard let idx = args.firstIndex(of: flag) else { return nil }
+        let rawPath: String
+        if idx + 1 < args.count, !args[idx + 1].hasPrefix("--") {
+            rawPath = args[idx + 1]
+        } else {
+            rawPath = FileManager.default.currentDirectoryPath
+        }
+        let url = URL(fileURLWithPath: rawPath).standardized
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir),
+              isDir.boolValue else {
+            FileHandle.standardError.write(Data("Not a directory: \(url.path)\n".utf8))
+            exit(1)
+        }
+        return url
     }
 
     private static func runInstallCLI(target: HookInstaller.Target) {
@@ -55,12 +79,13 @@ struct DynamicIslandApp {
         print("""
         Usage: DynamicIsland [options]
 
-          (no options)              Run the app normally.
-          --install-hooks           Install Claude Code hooks and exit.
-          --uninstall-hooks         Remove Claude Code hooks and exit.
-          --install-copilot-hooks   Install GitHub Copilot hooks and exit.
-          --uninstall-copilot-hooks Remove GitHub Copilot hooks and exit.
-          --help, -h                Show this help.
+          (no options)                         Run the app normally.
+          --install-hooks                      Install Claude Code hooks (~/.claude/settings.json).
+          --uninstall-hooks                    Remove Claude Code hooks.
+          --install-copilot-hooks [repoPath]   Install Copilot hooks to {repoPath}/.github/hooks/hooks.json
+                                               (defaults to current directory).
+          --uninstall-copilot-hooks [repoPath] Remove Copilot hooks from that repo.
+          --help, -h                           Show this help.
         """)
     }
 }

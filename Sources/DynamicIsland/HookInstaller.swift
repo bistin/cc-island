@@ -19,7 +19,8 @@ enum HookInstaller {
 
     enum Target {
         case claudeCode
-        case copilot
+        /// Copilot hooks are per-repo, written to `{repoPath}/.github/hooks/hooks.json`.
+        case copilot(repoPath: URL)
 
         var displayName: String {
             switch self {
@@ -31,20 +32,30 @@ enum HookInstaller {
         var deployedHookURL: URL {
             let home = FileManager.default.homeDirectoryForCurrentUser
             switch self {
-            case .claudeCode: return home.appendingPathComponent(".claude/hooks/dynamic-island-hook.sh")
-            case .copilot:    return home.appendingPathComponent(".copilot/hooks/dynamic-island-hook.sh")
+            case .claudeCode:
+                return home.appendingPathComponent(".claude/hooks/dynamic-island-hook.sh")
+            case .copilot:
+                // Script lives globally; each repo's config just references it.
+                return home.appendingPathComponent(".copilot/hooks/dynamic-island-hook.sh")
             }
         }
 
         var settingsURL: URL {
-            let home = FileManager.default.homeDirectoryForCurrentUser
             switch self {
-            case .claudeCode: return home.appendingPathComponent(".claude/settings.json")
-            case .copilot:    return home.appendingPathComponent(".copilot/hooks/hooks.json")
+            case .claudeCode:
+                return FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent(".claude/settings.json")
+            case .copilot(let repoPath):
+                return repoPath.appendingPathComponent(".github/hooks/hooks.json")
             }
         }
 
-        var usesMatcher: Bool { self == .claudeCode }
+        var usesMatcher: Bool {
+            switch self {
+            case .claudeCode: return true
+            case .copilot:    return false
+            }
+        }
 
         fileprivate var events: [(name: String, matcher: String, timeout: Int)] {
             switch self {
@@ -67,14 +78,14 @@ enum HookInstaller {
                     ("PostCompact",        "",                                         5),
                 ]
             case .copilot:
+                // camelCase event names, per docs.github.com/en/copilot/.../cloud-agent/use-hooks
                 return [
-                    ("PreToolUse",       "", 5),
-                    ("PostToolUse",      "", 5),
-                    ("UserPromptSubmit", "", 5),
-                    ("Stop",             "", 5),
-                    ("SessionStart",     "", 5),
-                    ("SubagentStart",    "", 5),
-                    ("SubagentStop",     "", 5),
+                    ("preToolUse",          "", 5),
+                    ("postToolUse",         "", 5),
+                    ("userPromptSubmitted", "", 5),
+                    ("sessionStart",        "", 5),
+                    ("sessionEnd",          "", 5),
+                    ("errorOccurred",       "", 5),
                 ]
             }
         }
@@ -185,13 +196,15 @@ enum HookInstaller {
     }
 
     /// Extracts the hook command path(s) from an entry, accounting for the
-    /// target's schema (nested "hooks" array for Claude, flat for Copilot).
+    /// target's schema (Claude Code: nested "hooks" array with "command";
+    /// Copilot: flat entry with "bash").
     private static func commandsIn(entry: [String: Any], target: Target) -> [String] {
-        if target.usesMatcher {
+        switch target {
+        case .claudeCode:
             return (entry["hooks"] as? [[String: Any]] ?? [])
                 .compactMap { $0["command"] as? String }
-        } else {
-            return [entry["command"] as? String].compactMap { $0 }
+        case .copilot:
+            return [entry["bash"] as? String].compactMap { $0 }
         }
     }
 
@@ -199,15 +212,16 @@ enum HookInstaller {
         _ entry: [String: Any], target: Target,
         matcher: String, command: String, timeout: Int
     ) -> Bool {
-        if target.usesMatcher {
+        switch target {
+        case .claudeCode:
             guard entry["matcher"] as? String == matcher,
                   let inner = entry["hooks"] as? [[String: Any]] else { return false }
             return inner.contains { h in
                 (h["command"] as? String) == command && (h["timeout"] as? Int) == timeout
             }
-        } else {
-            return (entry["command"] as? String) == command
-                && (entry["timeout"] as? Int) == timeout
+        case .copilot:
+            return (entry["bash"] as? String) == command
+                && (entry["timeoutSec"] as? Int) == timeout
         }
     }
 
@@ -264,6 +278,11 @@ enum HookInstaller {
             root["hooks"] = hooks
         }
 
+        // Copilot requires a top-level schema version field.
+        if case .copilot = target, shouldHaveHooks {
+            root["version"] = 1
+        }
+
         let parent = url.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
 
@@ -275,7 +294,8 @@ enum HookInstaller {
     private static func newEntry(
         target: Target, matcher: String, command: String, timeout: Int
     ) -> [String: Any] {
-        if target.usesMatcher {
+        switch target {
+        case .claudeCode:
             return [
                 "matcher": matcher,
                 "hooks": [[
@@ -284,11 +304,11 @@ enum HookInstaller {
                     "timeout": timeout,
                 ]],
             ]
-        } else {
+        case .copilot:
             return [
                 "type": "command",
-                "command": command,
-                "timeout": timeout,
+                "bash": command,
+                "timeoutSec": timeout,
             ]
         }
     }
