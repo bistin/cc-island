@@ -33,10 +33,10 @@ enum HookInstaller {
             let home = FileManager.default.homeDirectoryForCurrentUser
             switch self {
             case .claudeCode:
-                return home.appendingPathComponent(".claude/hooks/dynamic-island-hook.sh")
+                return home.appendingPathComponent(".claude/hooks/dynamic-island-hook")
             case .copilot:
-                // Script lives globally; each repo's config just references it.
-                return home.appendingPathComponent(".copilot/hooks/dynamic-island-hook.sh")
+                // Binary lives globally; each repo's config just references it.
+                return home.appendingPathComponent(".copilot/hooks/dynamic-island-hook")
             }
         }
 
@@ -95,10 +95,13 @@ enum HookInstaller {
 
     static func install(target: Target) -> Result {
         guard let source = locateHookScript() else {
-            return .skipped("island-hook.sh not found in app bundle")
+            return .skipped("island-hook binary not found in app bundle")
         }
         do {
             try deployHookScript(from: source, to: target.deployedHookURL)
+            // Clean up the legacy .sh hook from before v1.5 if it's lying around.
+            let legacy = target.deployedHookURL.appendingPathExtension("sh")
+            try? FileManager.default.removeItem(at: legacy)
             try writeSettings(target: target, shouldHaveHooks: true)
             return .installed
         } catch {
@@ -124,18 +127,18 @@ enum HookInstaller {
 
     // MARK: - Source resolution
 
+    /// Locates the bundled `island-hook` binary that we deploy into the user's
+    /// hook directories. Falls back to the dev-build location alongside the
+    /// running executable for un-bundled builds.
     private static func locateHookScript() -> URL? {
-        if let url = Bundle.main.url(forResource: "island-hook", withExtension: "sh"),
+        if let url = Bundle.main.url(forResource: "island-hook", withExtension: nil),
            FileManager.default.fileExists(atPath: url.path) {
             return url
         }
         let exe = URL(fileURLWithPath: ProcessInfo.processInfo.arguments[0])
+        let dir = exe.deletingLastPathComponent()
         let candidates = [
-            exe.deletingLastPathComponent().appendingPathComponent("island-hook.sh"),
-            exe.deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("hooks/island-hook.sh"),
+            dir.appendingPathComponent("island-hook"),
         ]
         return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
     }

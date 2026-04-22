@@ -26,8 +26,8 @@ jobs:
         run: |
           mkdir -p DynamicIsland.app/Contents/{MacOS,Resources}
           cp .build/release/DynamicIsland DynamicIsland.app/Contents/MacOS/
-          cp hooks/island-hook.sh DynamicIsland.app/Contents/Resources/
-          cp hooks/island-hook.sh DynamicIsland.app/Contents/Resources/claude-hook.sh
+          cp .build/release/island-hook   DynamicIsland.app/Contents/Resources/
+          chmod +x DynamicIsland.app/Contents/Resources/island-hook
           cp Info.plist DynamicIsland.app/Contents/
           codesign --force --deep --sign - DynamicIsland.app
 

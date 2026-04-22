@@ -61,7 +61,8 @@ open /Applications/DynamicIsland.app
 ### Prerequisites
 
 - macOS 13.0+
-- `jq`（hook 腳本需要）：`brew install jq`
+
+> 從 v1.5.0 起 hook 改成 Swift binary，**不再需要 `jq`**。
 
 ---
 
@@ -221,20 +222,20 @@ pkill DynamicIsland
 ## Architecture
 
 ```
-Sources/DynamicIsland/
-├── App.swift                # NSApplication entry, CLI parsing, NSAlert prompt
-├── HookInstaller.swift      # Auto-install hooks for Claude Code & Copilot
-├── IslandPanel.swift        # NSPanel, auto-detect notch dimensions
-├── IslandState.swift        # State manager, immediate event display
-├── IslandView.swift         # SwiftUI views (ears, thinking pulse, expanded)
-├── LocalServer.swift        # HTTP server (Network framework, port 9423)
-└── NotificationMonitor.swift # macOS system notification listener
+Sources/
+├── DynamicIsland/
+│   ├── App.swift                # NSApplication entry, CLI parsing, NSAlert prompt
+│   ├── HookInstaller.swift      # Auto-install hooks for Claude Code & Copilot
+│   ├── IslandPanel.swift        # NSPanel, auto-detect notch dimensions
+│   ├── IslandState.swift        # State manager, immediate event display
+│   ├── IslandView.swift         # SwiftUI views (ears, thinking pulse, expanded)
+│   ├── LocalServer.swift        # HTTP server (Network framework, port 9423)
+│   └── NotificationMonitor.swift # macOS system notification listener
+└── island-hook/
+    └── main.swift               # Universal hook binary (Claude Code + Copilot + Codex)
 
 hooks/
-├── island-hook.sh           # Universal hook (Claude Code + Copilot + Codex)
-├── claude-hook.sh           # Legacy Claude Code only hook
-├── claude-settings-example.json
-└── copilot-hooks.json       # Copilot hook config example
+└── claude-settings-example.json # Reference config for manual setup
 ```
 
 ## License
