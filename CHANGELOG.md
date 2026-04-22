@@ -1,0 +1,61 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.4.0] - 2026-04-22
+
+### Added
+- **Auto hook installation** — first launch shows an NSAlert (Install / Skip / Never) and
+  configures Claude Code hooks automatically. Choice persists in UserDefaults; subsequent
+  launches silently sync if the deployed script or settings drift out of date.
+- **CLI flags** for scripted setup:
+  - `--install-hooks` / `--uninstall-hooks` (Claude Code, writes `~/.claude/settings.json`)
+  - `--install-copilot-hooks [path]` / `--uninstall-copilot-hooks [path]`
+    (Copilot, writes `{path}/.github/hooks/hooks.json`, defaults to current directory)
+  - `--help` for usage
+- `HookInstaller.swift` — manages script deployment and settings.json manipulation for
+  both Claude Code and Copilot. Detects existing entries by command-path markers so
+  other tools' hooks (e.g. gemini-bridge) are preserved.
+- HTTP server now returns 400 on invalid `/event` payloads instead of silent 200
+  (thanks @xero7689, [#2](https://github.com/bistin/cc-island/pull/2)).
+
+### Changed
+- Hooks now deploy to `~/.claude/hooks/dynamic-island-hook.sh` (stable path independent
+  of the .app location). Moving the .app no longer breaks the registration.
+- Copilot hooks use the official schema per
+  [docs.github.com](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/use-hooks):
+  per-repo `.github/hooks/hooks.json`, top-level `version: 1`, camelCase event names
+  (`preToolUse`, `postToolUse`, `userPromptSubmitted`, `sessionStart`, `sessionEnd`,
+  `errorOccurred`), `bash` / `timeoutSec` fields.
+
+### Safety
+- Installer refuses to overwrite `~/.claude/settings.json` if existing JSON is unparseable.
+- `currentlyInSync` check verifies the deployed script file exists, not just the settings
+  entries — so a user-deleted script triggers redeploy on next launch.
+
+## [1.3.0] - 2026-04-21
+
+### Added
+- Six previously-missing Claude Code hook events:
+  - `PostToolUseFailure` — replaces fragile grep-based failure detection
+  - `PermissionDenied` — auto-mode silent denials surface as warnings
+  - `StopFailure` — rate limit / auth / billing errors are now visible
+  - `SessionEnd` — clears thinking state on session close
+  - `PreCompact` / `PostCompact` — context compaction progress
+- **FIFO context correlation** — `PreToolUse` caches its full payload to
+  `/tmp/di_pretool_${PROJECT}.json`; the next `PermissionRequest` reads it to
+  show a colored diff (Edit), content preview (Write), or fallback command (Bash).
+
+### Fixed
+- `jq` error when `.error` field is a string in `PostToolUseFailure` payload.
+
+## [1.0.0] - 2026-04-02
+
+Initial release. See repo history for details.
+
+[1.4.0]: https://github.com/bistin/cc-island/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/bistin/cc-island/compare/v1.0.0...v1.3.0
+[1.0.0]: https://github.com/bistin/cc-island/releases/tag/v1.0.0
