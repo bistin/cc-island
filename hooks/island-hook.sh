@@ -32,6 +32,9 @@ send() {
     if [ -n "$AGENT_ID" ]; then
         payload=$(echo "$payload" | jq -c --arg id "$AGENT_ID" --arg t "$AGENT_TYPE" '. + {agent_id: $id, agent_type: $t}')
     fi
+    if [ -n "$SOURCE" ]; then
+        payload=$(echo "$payload" | jq -c --arg s "$SOURCE" '. + {source: $s}')
+    fi
     curl -s -X POST "$URL" \
         -H "Content-Type: application/json" \
         -d "$payload" > /dev/null 2>&1 &
@@ -84,15 +87,25 @@ CP_SOURCE=$(echo "$INPUT" | jq -r '.source // empty')
 CP_REASON=$(echo "$INPUT" | jq -r '.reason // empty')
 CP_ERROR=$(echo "$INPUT" | jq -r '.error.message? // empty')
 
-# ─── Normalize to a common event + tool ───
+# ─── Normalize to a common event + tool, and detect source ───
+# SOURCE drives the project color in the island UI:
+#   claude  → warm orange    copilot → GitHub violet    codex → OpenAI green
+# Override via ISLAND_SOURCE env var (Codex hook script should set this).
+SOURCE="${ISLAND_SOURCE:-}"
+
 if [ -n "$CC_EVENT" ]; then
-    # Claude Code
     EVENT="$CC_EVENT"
     TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
+    # First-letter casing distinguishes Claude Code (PascalCase like
+    # "PreToolUse") from Copilot CLI (camelCase like "preToolUse").
+    [ -z "$SOURCE" ] && case "$CC_EVENT" in
+        [a-z]*) SOURCE="copilot" ;;
+        *)      SOURCE="claude"  ;;
+    esac
 else
-    # GitHub Copilot — detect event type from available fields
+    # Older Copilot detection — toolName at root, no hook_event_name.
+    [ -z "$SOURCE" ] && SOURCE="copilot"
     if [ -n "$CP_TOOL" ]; then
-        # Has toolName → pre or post tool use
         RESULT_TYPE=$(echo "$INPUT" | jq -r '.toolResult.resultType // empty')
         if [ -n "$RESULT_TYPE" ]; then
             EVENT="PostToolUse"
@@ -111,6 +124,19 @@ else
     else
         exit 0
     fi
+fi
+
+# Normalize Copilot's camelCase event names to the PascalCase forms the
+# rest of this script switches on.
+if [ "$SOURCE" = "copilot" ]; then
+    case "$EVENT" in
+        preToolUse)          EVENT="PreToolUse" ;;
+        postToolUse)         EVENT="PostToolUse" ;;
+        userPromptSubmitted) EVENT="UserPromptSubmit" ;;
+        sessionStart)        EVENT="SessionStart" ;;
+        sessionEnd)          EVENT="SessionEnd" ;;
+        errorOccurred)       EVENT="Error" ;;
+    esac
 fi
 
 # ─── Helper: extract file path from either format ───
