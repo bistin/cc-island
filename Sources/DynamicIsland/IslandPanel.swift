@@ -1,8 +1,10 @@
 import AppKit
+import Combine
 import SwiftUI
 
 class IslandPanel: NSPanel {
     let stateManager: IslandStateManager
+    private var cancellables: Set<AnyCancellable> = []
 
     // Auto-detected from screen, with sensible fallbacks
     static var notchWidth: CGFloat = 185
@@ -54,7 +56,8 @@ class IslandPanel: NSPanel {
         self.isMovableByWindowBackground = false
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         self.hidesOnDeactivate = false
-        self.ignoresMouseEvents = false
+        // Start click-through; toggled on when there's something to interact with.
+        self.ignoresMouseEvents = true
         self.acceptsMouseMovedEvents = true
 
         let hostView = NSHostingView(
@@ -63,6 +66,16 @@ class IslandPanel: NSPanel {
         )
         hostView.layer?.backgroundColor = .clear
         self.contentView = hostView
+
+        // Pass clicks through to whatever is behind the notch when no event is
+        // showing — without this, the panel's transparent gap blocks menu-bar
+        // items behind the camera notch.
+        Publishers.CombineLatest(stateManager.$mode, stateManager.$currentEvent)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] mode, event in
+                self?.ignoresMouseEvents = (mode == .hidden && event == nil)
+            }
+            .store(in: &cancellables)
     }
 
     func show() {
