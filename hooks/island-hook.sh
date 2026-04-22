@@ -98,9 +98,11 @@ if [ -n "$CC_EVENT" ]; then
     TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
     # First-letter casing distinguishes Claude Code (PascalCase like
     # "PreToolUse") from Copilot CLI (camelCase like "preToolUse").
+    # Use POSIX [[:upper:]] — `[A-Z]` would mis-match in en_US.UTF-8 where
+    # collation interleaves cases (P ∈ [a-z]).
     [ -z "$SOURCE" ] && case "$CC_EVENT" in
-        [a-z]*) SOURCE="copilot" ;;
-        *)      SOURCE="claude"  ;;
+        [[:upper:]]*) SOURCE="claude"  ;;
+        *)            SOURCE="copilot" ;;
     esac
 else
     # Older Copilot detection — toolName at root, no hook_event_name.

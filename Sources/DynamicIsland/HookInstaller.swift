@@ -140,6 +140,16 @@ enum HookInstaller {
         return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
+    /// Detects content drift between the bundled source script and the deployed copy.
+    /// If we can't locate a source (dev-build edge case), assume in sync to avoid
+    /// triggering an unfixable redeploy loop.
+    private static func deployedScriptMatchesSource(target: Target) -> Bool {
+        guard let source = locateHookScript() else { return true }
+        guard let deployed = try? Data(contentsOf: target.deployedHookURL),
+              let bundled  = try? Data(contentsOf: source) else { return false }
+        return deployed == bundled
+    }
+
     private static func deployHookScript(from source: URL, to dest: URL) throws {
         let dir = dest.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -155,6 +165,7 @@ enum HookInstaller {
 
     private static func currentlyInSync(target: Target) -> Bool {
         guard FileManager.default.fileExists(atPath: target.deployedHookURL.path) else { return false }
+        guard deployedScriptMatchesSource(target: target) else { return false }
         guard let data = try? Data(contentsOf: target.settingsURL),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let hooks = root["hooks"] as? [String: Any] else {
