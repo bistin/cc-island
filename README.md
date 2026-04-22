@@ -67,67 +67,45 @@ open /Applications/DynamicIsland.app
 
 ## Setup Hooks
 
-啟動 app 後，設定你使用的 AI tool 的 hooks。
+### Claude Code（推薦：自動安裝）
 
-### Claude Code
+第一次啟動 app 時會跳出對話框問你要不要設定 Claude Code hooks。按 **Install** 就好，會自動：
 
-在 `~/.claude/settings.json` 加入（如果已有 `hooks` 區塊，合併進去）：
+- 把 `island-hook.sh` 複製到 `~/.claude/hooks/dynamic-island-hook.sh`
+- 在 `~/.claude/settings.json` 註冊所有 hook 事件
+- 保留你其他工具的 hook（例如 gemini-bridge）不會被動到
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
-    ],
-    "PostToolUse": [
-      { "matcher": "Bash|Edit|Write", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
-    ],
-    "Notification": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
-    ],
-    "Stop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
-    ],
-    "UserPromptSubmit": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
-    ],
-    "SubagentStart": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
-    ],
-    "SubagentStop": [
-      { "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }
-    ],
-    "PermissionRequest": [
-      { "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 30 }] }
-    ]
-  }
-}
-```
+之後升級重新打開 app，hooks 會自動同步到最新版（idempotent，沒變動就不寫）。
 
-> The `PermissionRequest` matcher intentionally excludes read-only tools (`Read`, `Grep`, `Glob`). This avoids Allow/Deny popping up for trivial subagent actions — Claude Code's default permission flow handles them silently.
-
-### GitHub Copilot (VS Code)
-
-複製設定到 `~/.copilot/hooks/hooks.json`：
+也可以從 terminal 手動執行：
 
 ```bash
-mkdir -p ~/.copilot/hooks
-cp /Applications/DynamicIsland.app/Contents/Resources/island-hook.sh ~/.copilot/hooks/
+DynamicIsland --install-hooks       # 安裝 / 升級
+DynamicIsland --uninstall-hooks     # 移除
 ```
 
-然後建立 `~/.copilot/hooks/hooks.json`（或放在 repo 的 `.github/hooks/hooks.json`）：
+> 註冊的事件涵蓋 PreToolUse / PostToolUse / PostToolUseFailure / PermissionRequest / PermissionDenied / Notification / Stop / StopFailure / SubagentStart / SubagentStop / UserPromptSubmit / SessionStart / SessionEnd / PreCompact / PostCompact。`PermissionRequest` matcher 限制在危險工具（`Bash|Edit|Write|MultiEdit|NotebookEdit`），唯讀工具不會跳 Allow/Deny。
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [{ "type": "command", "command": "~/.copilot/hooks/island-hook.sh", "timeout": 5 }],
-    "PostToolUse": [{ "type": "command", "command": "~/.copilot/hooks/island-hook.sh", "timeout": 5 }],
-    "UserPromptSubmit": [{ "type": "command", "command": "~/.copilot/hooks/island-hook.sh", "timeout": 5 }],
-    "Stop": [{ "type": "command", "command": "~/.copilot/hooks/island-hook.sh", "timeout": 5 }],
-    "SessionStart": [{ "type": "command", "command": "~/.copilot/hooks/island-hook.sh", "timeout": 5 }]
-  }
-}
+### GitHub Copilot CLI
+
+Copilot hooks 是 **per-repo** 的（寫進 `.github/hooks/hooks.json`），所以每個專案各自安裝：
+
+```bash
+cd /path/to/your/repo
+DynamicIsland --install-copilot-hooks    # 預設使用 cwd
+# 或明確指定路徑
+DynamicIsland --install-copilot-hooks /path/to/repo
 ```
+
+會在 `{repoPath}/.github/hooks/hooks.json` 寫入 Copilot 的 hook 設定（camelCase 事件、`version: 1`、`bash`/`timeoutSec` 欄位），並把腳本部署到全域的 `~/.copilot/hooks/dynamic-island-hook.sh`。
+
+移除：
+
+```bash
+DynamicIsland --uninstall-copilot-hooks /path/to/repo
+```
+
+> ⚠️ `.github/hooks/hooks.json` 預設會被 git 追蹤。如果不想 commit 給隊友，加進 `.gitignore`。
 
 ### OpenAI Codex
 
@@ -244,7 +222,8 @@ pkill DynamicIsland
 
 ```
 Sources/DynamicIsland/
-├── App.swift                # NSApplication entry, AppDelegate
+├── App.swift                # NSApplication entry, CLI parsing, NSAlert prompt
+├── HookInstaller.swift      # Auto-install hooks for Claude Code & Copilot
 ├── IslandPanel.swift        # NSPanel, auto-detect notch dimensions
 ├── IslandState.swift        # State manager, immediate event display
 ├── IslandView.swift         # SwiftUI views (ears, thinking pulse, expanded)

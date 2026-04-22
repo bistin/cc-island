@@ -37,11 +37,33 @@ The app listens on **port 9423** for HTTP POST events.
 
 Project label: derived from `cwd` basename; subagent events override it with `↳ <agent_type>`. A deterministic hash picks one of 8 palette colors so concurrent sessions are visually distinguishable.
 
+### Auto-install (HookInstaller.swift)
+
+Hooks are auto-installed on first launch via an NSAlert (Install / Skip / Never), with the choice persisted in `UserDefaults["hookInstallChoice"]`. Subsequent launches silently sync via `syncIfOutdated`, which is idempotent and only writes when the deployed script or settings actually drift.
+
+The script is deployed to `~/.claude/hooks/dynamic-island-hook.sh` (stable path independent of the .app location), and `~/.claude/settings.json` is updated non-destructively — entries from other tools (gemini-bridge etc.) are preserved by detecting "ours" via command path markers (`dynamic-island-hook` / `island-hook.sh` / `claude-hook.sh` / `DynamicIsland`).
+
+CLI:
+- `--install-hooks` / `--uninstall-hooks` — Claude Code (writes `~/.claude/settings.json`)
+- `--install-copilot-hooks [repoPath]` / `--uninstall-copilot-hooks [repoPath]` — Copilot (writes `{repo}/.github/hooks/hooks.json`, defaults to cwd)
+
+Copilot uses a different schema: top-level `version: 1`, camelCase events (`preToolUse`, `postToolUse`, `userPromptSubmitted`, `sessionStart`, `sessionEnd`, `errorOccurred`), no matcher, fields `{type, bash, timeoutSec}`.
+
+Safety: `writeSettings` refuses to overwrite the file if existing JSON is invalid, to avoid clobbering user config. `currentlyInSync` checks the deployed script exists, not just the settings entries.
+
+### Registered events (Claude Code)
+
+PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, PermissionDenied, Notification, Stop, StopFailure, SubagentStart, SubagentStop, UserPromptSubmit, SessionStart, SessionEnd, PreCompact, PostCompact. `PostToolUseFailure` / `StopFailure` replace fragile grep-based error detection; `PreCompact` / `PostCompact` show context compaction progress.
+
 ## Permission Flow
 
 `PermissionRequest` hook POSTs an `action`-style event (Permission title + tool detail), then long-polls `GET /response` for up to 25s. The UI buttons call `LocalServer.setResponse("allow"|"deny")`, which resumes the waiter. If no waiter is present the value is stored in `pendingResponse` for the next poll — but never persisted past a single delivery, to avoid stale clicks leaking into future requests. On timeout the hook exits silently and Claude Code falls back to its normal permission prompt.
 
 The matcher in `settings.json` intentionally limits `PermissionRequest` to risky tools (`Bash|Edit|Write|MultiEdit|NotebookEdit`) — read-only tools like `Read`/`Grep`/`Glob` skip the island so subagents don't spam Allow/Deny.
+
+### FIFO context correlation
+
+`PreToolUse` for Edit/Write/Bash/MultiEdit/NotebookEdit caches its full payload to `/tmp/di_pretool_${PROJECT}.json`. The next `PermissionRequest` reads it to enrich the dialog: Edit/MultiEdit shows a colored diff (red `-` / green `+`), Write shows a content preview, Bash backfills the command/description if `tool_input` arrived empty. Keyed by project name, single-slot (the next PreToolUse overwrites) — works because PreToolUse and PermissionRequest fire serially per Claude session.
 
 ## Conventions
 
