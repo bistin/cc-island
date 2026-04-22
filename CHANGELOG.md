@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2026-04-22
+
+### Added
+- **Menu bar icon** — `NSStatusItem` with a horizontal-pill template icon
+  (the Dynamic Island silhouette in compact form). Click target uses the
+  full 22×22 canvas so it hits like any other menu-bar item.
+- Menu items: version label, **Reinstall Claude Code Hooks**, **Quit
+  Dynamic Island** — no more `pkill DynamicIsland` from terminal.
+
+### Fixed
+- The panel spans `earWidth*2 + notchWidth` (~465pt) and used to swallow
+  every click in that strip even when no event was showing, making
+  menu-bar items behind the camera notch unreachable. Now toggles
+  `ignoresMouseEvents` based on state — clicks pass through when idle.
+
 ## [1.4.2] - 2026-04-22
 
 ### Fixed
@@ -89,6 +104,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release. See repo history for details.
 
+[1.4.3]: https://github.com/bistin/cc-island/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/bistin/cc-island/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/bistin/cc-island/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/bistin/cc-island/compare/v1.3.0...v1.4.0
