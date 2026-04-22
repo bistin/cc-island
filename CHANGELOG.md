@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-04-22
+
+### Added
+- **Hook is now a Swift binary** (~109KB Foundation-only Mach-O), shipped
+  in the .app bundle and deployed to `~/.claude/hooks/dynamic-island-hook`
+  / `~/.copilot/hooks/dynamic-island-hook`. **No more `jq` dependency.**
+- `IslandHookCore` SPM library — pure logic (parsing, source detection,
+  payload builders, formatting helpers) covered by **68 unit tests**.
+  Run with `swift test`.
+- **Stop event shows the actual question** Claude is asking instead of
+  generic "Your turn". `extractLastQuestion` splits on sentence terminators
+  (English `. ! ?`, fullwidth `。 ！ ？`, newlines) and takes the trailing
+  sentence; the full message is also placed in `detail` for the expanded view.
+- **Menu bar icon** with a horizontal-pill template (Dynamic Island
+  silhouette). Menu items: version, Reinstall Claude Code Hooks, Quit
+  Dynamic Island. No more `pkill DynamicIsland` from terminal.
+
+### Changed
+- `HookInstaller` deploys the binary instead of the shell script. On
+  first launch it cleans up any legacy `.sh` deployment from the old path.
+- Hook content drift detection: `currentlyInSync` byte-compares the
+  deployed binary against the bundled source, so upgrading the .app
+  triggers a redeploy automatically.
+- README and CLAUDE.md updated end-to-end for the new binary, no-jq
+  reality, and the IslandHookCore architecture.
+
+### Fixed
+- Idle island used to swallow clicks behind the camera notch — menu-bar
+  items there are reachable again. Panel now toggles `ignoresMouseEvents`
+  based on state.
+
+### Removed
+- `hooks/island-hook.sh`, `hooks/claude-hook.sh`, `hooks/copilot-hooks.json`
+  — superseded by the binary; the Copilot example was using an outdated
+  schema anyway.
+
 ## [1.4.3] - 2026-04-22
 
 ### Added
@@ -104,6 +140,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release. See repo history for details.
 
+[1.5.0]: https://github.com/bistin/cc-island/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/bistin/cc-island/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/bistin/cc-island/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/bistin/cc-island/compare/v1.4.0...v1.4.1
