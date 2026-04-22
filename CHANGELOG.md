@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-04-22
+
+### Fixed
+- Source detection misclassified Claude Code events as Copilot. `bash`'s
+  `case "$CC_EVENT" in [a-z]*)` matches uppercase letters too in
+  `en_US.UTF-8` because the locale interleaves cases (P falls inside
+  `[a-z]`). Switched to `[[:upper:]]` POSIX class. Without this fix,
+  Claude events showed whatever the project-name-hash palette landed on
+  instead of warm orange.
+- `currentlyInSync` now byte-compares the deployed script against the
+  bundled source. Previously, after upgrading the .app, the stale copy
+  at `~/.claude/hooks/dynamic-island-hook.sh` would keep running and
+  silently drop new fields like `source`. Drift now triggers redeploy
+  on next launch or `--install-hooks` invocation.
+
 ## [1.4.1] - 2026-04-22
 
 ### Added
@@ -74,6 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release. See repo history for details.
 
+[1.4.2]: https://github.com/bistin/cc-island/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/bistin/cc-island/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/bistin/cc-island/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/bistin/cc-island/compare/v1.0.0...v1.3.0
