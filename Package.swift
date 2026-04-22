@@ -9,12 +9,22 @@ let package = Package(
             name: "DynamicIsland",
             path: "Sources/DynamicIsland"
         ),
+        // Pure-logic library extracted from island-hook. Foundation-only so
+        // it can be linked from the tiny hook CLI and covered by XCTest.
+        .target(
+            name: "IslandHookCore",
+            path: "Sources/IslandHookCore"
+        ),
         // Tiny CLI binary that replaces hooks/island-hook.sh.
-        // Foundation-only so the binary stays small and the user no longer
-        // needs jq installed.
         .executableTarget(
             name: "island-hook",
+            dependencies: ["IslandHookCore"],
             path: "Sources/island-hook"
+        ),
+        .testTarget(
+            name: "IslandHookCoreTests",
+            dependencies: ["IslandHookCore"],
+            path: "Tests/IslandHookCoreTests"
         ),
     ]
 )
