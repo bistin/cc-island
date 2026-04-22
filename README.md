@@ -2,7 +2,7 @@
 
 把 iPhone 的 Dynamic Island 帶到 Mac 上。利用 MacBook 的瀏海（notch），在兩側即時顯示 AI coding agent 的動態。
 
-支援 **Claude Code**、**GitHub Copilot**、**OpenAI Codex** — 一個 hook 腳本三家通吃。
+支援 **Claude Code**、**GitHub Copilot**、**OpenAI Codex** — 一個 hook binary 三家通吃，零外部依賴。
 
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue)
 ![Swift 5.9](https://img.shields.io/badge/Swift-5.9-orange)
@@ -11,12 +11,14 @@
 ## Features
 
 - **瀏海融合** — 自動偵測螢幕瀏海尺寸，凹弧貼合圓角，無縫銜接
+- **Source 配色** — Claude Code 暖橘 / Copilot 紫 / Codex 綠，左右兩側色條 + 呼吸燈一眼分辨來源
 - **Thinking 脈動** — AI 思考中時瀏海下方呼吸光暈
-- **Action 按鈕** — Claude Code 要你批准 Bash/Edit 時，直接在瀏海上 Allow/Deny，不用跳回 terminal
-- **Reminder 提醒** — 需要注意但沒選項時（例如 Claude 問問題）藍色脈動閃爍
+- **Action 按鈕** — Claude Code 要你批准 Bash/Edit 時，直接在瀏海上 Allow/Deny，不用跳回 terminal；展開預覽顯示真實 diff
+- **Reminder 提醒** — Claude 問問題時把實際問題秀在右耳，不只是 "Your turn"
 - **Progress 即時更新** — 長任務串流進度到瀏海，同 title POST 就會就地更新、不會重新動畫；附 `swift build` wrapper
-- **多 session 色標** — 同時跑多個 Claude Code，依 project 名稱自動配色區分；subagent 顯示為 `↳ agent_type`
-- **三家 AI 整合** — Claude Code / GitHub Copilot / OpenAI Codex hooks
+- **多 session 色標** — 同時跑多個 session，依 project 名稱自動配色區分；subagent 顯示為 `↳ agent_type`
+- **三家 AI 整合** — Claude Code / GitHub Copilot / OpenAI Codex hooks，自動偵測來源
+- **Menu bar icon** — 從選單列直接 Quit / Reinstall Hooks，不用 `pkill`
 - **HTTP API** — `POST http://127.0.0.1:9423/event`，任何工具都能整合
 - **自動適配** — 有瀏海用耳朵模式，沒瀏海用膠囊模式
 
@@ -33,7 +35,7 @@
    open /Applications/DynamicIsland.app
    ```
 
-> App 不會出現在 Dock，它在背景運行。要關閉用 `pkill DynamicIsland`。
+> App 不會出現在 Dock，但會在 menu bar 顯示一個小 island icon — 點開可以 Quit / Reinstall Hooks。
 
 ### Option B: From Source
 
@@ -43,13 +45,17 @@
 git clone https://github.com/bistin/cc-island.git
 cd cc-island
 
-# Build
+# Build (produces both DynamicIsland app and the hook binary)
 swift build -c release
 
-# Install as .app
+# Run unit tests (68 tests covering hook payload formatting)
+swift test
+
+# Assemble .app bundle
 mkdir -p build/DynamicIsland.app/Contents/{MacOS,Resources}
 cp .build/release/DynamicIsland build/DynamicIsland.app/Contents/MacOS/
-cp hooks/island-hook.sh build/DynamicIsland.app/Contents/Resources/
+cp .build/release/island-hook   build/DynamicIsland.app/Contents/Resources/
+chmod +x build/DynamicIsland.app/Contents/Resources/island-hook
 cp Info.plist build/DynamicIsland.app/Contents/
 codesign --force --deep --sign - build/DynamicIsland.app
 cp -R build/DynamicIsland.app /Applications/
@@ -72,7 +78,7 @@ open /Applications/DynamicIsland.app
 
 第一次啟動 app 時會跳出對話框問你要不要設定 Claude Code hooks。按 **Install** 就好，會自動：
 
-- 把 `island-hook.sh` 複製到 `~/.claude/hooks/dynamic-island-hook.sh`
+- 把 `island-hook` binary 部署到 `~/.claude/hooks/dynamic-island-hook`
 - 在 `~/.claude/settings.json` 註冊所有 hook 事件
 - 保留你其他工具的 hook（例如 gemini-bridge）不會被動到
 
@@ -98,7 +104,7 @@ DynamicIsland --install-copilot-hooks    # 預設使用 cwd
 DynamicIsland --install-copilot-hooks /path/to/repo
 ```
 
-會在 `{repoPath}/.github/hooks/hooks.json` 寫入 Copilot 的 hook 設定（camelCase 事件、`version: 1`、`bash`/`timeoutSec` 欄位），並把腳本部署到全域的 `~/.copilot/hooks/dynamic-island-hook.sh`。
+會在 `{repoPath}/.github/hooks/hooks.json` 寫入 Copilot 的 hook 設定（camelCase 事件、`version: 1`、`bash`/`timeoutSec` 欄位），並把 binary 部署到全域的 `~/.copilot/hooks/dynamic-island-hook`。
 
 移除：
 
@@ -110,16 +116,24 @@ DynamicIsland --uninstall-copilot-hooks /path/to/repo
 
 ### OpenAI Codex
 
-建立 `~/.codex/hooks.json`：
+目前沒有 auto-install，需要手動設定。先把 hook binary 取出來：
+
+```bash
+mkdir -p ~/.codex/hooks
+cp /Applications/DynamicIsland.app/Contents/Resources/island-hook ~/.codex/hooks/dynamic-island-hook
+chmod +x ~/.codex/hooks/dynamic-island-hook
+```
+
+然後建立 `~/.codex/hooks.json`（指向上面的 binary，並設 `ISLAND_SOURCE=codex` 讓 island 用綠色配色）：
 
 ```json
 {
   "hooks": {
-    "PreToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }],
-    "PostToolUse": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }],
-    "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }],
-    "Stop": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }],
-    "SessionStart": [{ "matcher": "", "hooks": [{ "type": "command", "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh", "timeout": 5 }] }]
+    "PreToolUse":       [{ "matcher": "", "hooks": [{ "type": "command", "command": "ISLAND_SOURCE=codex ~/.codex/hooks/dynamic-island-hook", "timeout": 5 }] }],
+    "PostToolUse":      [{ "matcher": "", "hooks": [{ "type": "command", "command": "ISLAND_SOURCE=codex ~/.codex/hooks/dynamic-island-hook", "timeout": 5 }] }],
+    "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "ISLAND_SOURCE=codex ~/.codex/hooks/dynamic-island-hook", "timeout": 5 }] }],
+    "Stop":             [{ "matcher": "", "hooks": [{ "type": "command", "command": "ISLAND_SOURCE=codex ~/.codex/hooks/dynamic-island-hook", "timeout": 5 }] }],
+    "SessionStart":     [{ "matcher": "", "hooks": [{ "type": "command", "command": "ISLAND_SOURCE=codex ~/.codex/hooks/dynamic-island-hook", "timeout": 5 }] }]
   }
 }
 ```
@@ -161,8 +175,8 @@ curl -s http://127.0.0.1:9423/event \
 | Bash | Terminal | command | claude |
 | Agent spawned | Agent | description | claude |
 | Subagent activity | `↳ agent_type` label | tool details | claude |
-| Permission needed (Bash/Edit/Write) | Permission | tool: detail + Allow/Deny buttons | action |
-| Claude asks a question | Waiting | Your turn | reminder |
+| Permission needed (Bash/Edit/Write) | Permission | tool: detail + Allow/Deny buttons + diff preview | action |
+| Claude asks a question | Waiting | the actual question text (full text in expanded view) | reminder |
 | Notification (non-permission) | Claude Code | message | reminder |
 | Long task with progress | title | `N/M` + ring (updates in place) | claude |
 | Done | Done | | success |
@@ -208,6 +222,8 @@ done
 
 ## Common Commands
 
+最常用的 Quit / Reinstall Hooks 直接從 menu bar icon 點。CLI 操作：
+
 ```bash
 # Launch
 open /Applications/DynamicIsland.app
@@ -215,27 +231,41 @@ open /Applications/DynamicIsland.app
 # Restart
 pkill DynamicIsland; open /Applications/DynamicIsland.app
 
-# Quit
+# Quit (or use menu bar icon)
 pkill DynamicIsland
+
+# Hook management (auto-prompt also runs on first launch)
+DynamicIsland --install-hooks                    # Claude Code
+DynamicIsland --install-copilot-hooks [path]     # Copilot, defaults to cwd
+DynamicIsland --uninstall-hooks
+DynamicIsland --uninstall-copilot-hooks [path]
+DynamicIsland --help
 ```
 
 ## Architecture
 
 ```
 Sources/
-├── DynamicIsland/
-│   ├── App.swift                # NSApplication entry, CLI parsing, NSAlert prompt
-│   ├── HookInstaller.swift      # Auto-install hooks for Claude Code & Copilot
-│   ├── IslandPanel.swift        # NSPanel, auto-detect notch dimensions
-│   ├── IslandState.swift        # State manager, immediate event display
-│   ├── IslandView.swift         # SwiftUI views (ears, thinking pulse, expanded)
-│   ├── LocalServer.swift        # HTTP server (Network framework, port 9423)
-│   └── NotificationMonitor.swift # macOS system notification listener
-└── island-hook/
-    └── main.swift               # Universal hook binary (Claude Code + Copilot + Codex)
+├── DynamicIsland/                  # The app — AppKit + SwiftUI
+│   ├── App.swift                       # entry, CLI, NSAlert install prompt, menu bar
+│   ├── HookInstaller.swift             # auto-install hooks for Claude Code & Copilot
+│   ├── IslandPanel.swift               # NSPanel, auto-detect notch dimensions
+│   ├── IslandState.swift               # state manager, immediate event display
+│   ├── IslandView.swift                # SwiftUI views (ears, thinking pulse, source stripe)
+│   ├── LocalServer.swift               # HTTP server (Network framework, port 9423)
+│   └── NotificationMonitor.swift       # macOS system notification listener
+├── IslandHookCore/                 # Pure-logic library (Foundation only, fully tested)
+│   ├── Format.swift                    # truncate, basename, diffLines, buildEditDiff
+│   ├── HookPlan.swift                  # parseHookPlan + extension methods
+│   └── PayloadBuilder.swift            # build{PreToolUse,PostToolUse,...}Payload
+└── island-hook/                    # Tiny CLI binary deployed to ~/.claude/hooks/
+    └── main.swift                      # I/O shell — reads stdin, dispatches via core, POSTs
+
+Tests/
+└── IslandHookCoreTests/            # 68 unit tests (`swift test`)
 
 hooks/
-└── claude-settings-example.json # Reference config for manual setup
+└── claude-settings-example.json    # Reference config for manual setup
 ```
 
 ## License
