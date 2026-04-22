@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-04-22
+
+### Added
+- **Source-aware color** — a vertical color stripe down each ear's outer edge
+  signals which AI sent the event: warm orange for Claude Code, GitHub violet
+  for Copilot, OpenAI green for Codex. Action / reminder pulse stroke and
+  shadow follow the same color, so a permission request from Claude glows
+  orange instead of generic blue.
+- Hook script auto-detects source by `hook_event_name` casing
+  (PascalCase → Claude, camelCase → Copilot) with a fallback to the legacy
+  `toolName`-at-root sniff. `ISLAND_SOURCE` env var lets Codex hooks opt in.
+- `IslandEvent.source` field — also accepted in HTTP `/event` payloads.
+
+### Changed
+- `projectColor` prefers the source color when known; the previous
+  project-name hash palette is still used as a fallback for events without
+  a source field, so legacy callers stay visually distinct.
+
 ## [1.4.0] - 2026-04-22
 
 ### Added
@@ -56,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release. See repo history for details.
 
+[1.4.1]: https://github.com/bistin/cc-island/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/bistin/cc-island/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/bistin/cc-island/compare/v1.0.0...v1.3.0
 [1.0.0]: https://github.com/bistin/cc-island/releases/tag/v1.0.0
