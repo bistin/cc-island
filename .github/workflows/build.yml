@@ -19,6 +19,9 @@ jobs:
       - name: Check Swift version
         run: swift --version
 
+      - name: Run tests
+        run: swift test
+
       - name: Build release
         run: swift build -c release
 
