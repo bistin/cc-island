@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import DynamicIslandCore
 
 /// Lightweight HTTP server that receives Claude Code hook events.
 /// Listens on a configurable port (default 9423) for POST /event requests.
@@ -111,13 +112,7 @@ class LocalServer {
             var buf = buffer
             if let chunk = chunk { buf.append(chunk) }
 
-            if buf.count > Self.maxRequestBytes {
-                print("[DynamicIsland] request exceeded \(Self.maxRequestBytes) bytes — dropping")
-                connection.cancel()
-                return
-            }
-
-            switch Self.parseHTTPRequest(buf) {
+            switch HTTPParser.parse(buf, maxTotalBytes: Self.maxRequestBytes) {
             case .needMore:
                 if isComplete {
                     // Client hung up mid-request. Nothing to do.
@@ -135,6 +130,17 @@ class LocalServer {
                     connection,
                     body: Self.errorBody(code: "malformed_request", message: reason),
                     statusCode: "400 Bad Request"
+                )
+
+            case .tooLarge:
+                // Fail fast: headers + declared Content-Length exceed our cap,
+                // or headers alone are pathologically large.
+                print("[DynamicIsland] request exceeded \(Self.maxRequestBytes) bytes — rejecting")
+                self.sendHTTP(
+                    connection,
+                    body: Self.errorBody(code: "payload_too_large",
+                                         message: "request exceeds \(Self.maxRequestBytes) bytes"),
+                    statusCode: "413 Payload Too Large"
                 )
             }
         }
@@ -166,85 +172,6 @@ class LocalServer {
         } else {
             sendHTTP(connection, body: "{\"status\":\"ok\"}")
         }
-    }
-
-    // MARK: - HTTP parsing
-
-    /// Fully-parsed HTTP request ready for dispatch.
-    struct HTTPRequest {
-        let method: String
-        let path: String
-        let headers: [String: String]   // keys lowercased
-        let body: Data
-    }
-
-    enum HTTPParseResult {
-        case needMore                   // keep reading
-        case done(HTTPRequest)
-        case invalid(String)            // 400 Bad Request
-    }
-
-    /// Pure parser: given whatever bytes we've accumulated so far, decide
-    /// whether we have a complete request, need more bytes, or should reject.
-    ///
-    /// Rules:
-    /// - Headers end at the first `\r\n\r\n`.
-    /// - Body length = `Content-Length` header (defaults to 0 if absent).
-    /// - `Content-Length: 0` (or absent) → request is complete as soon as
-    ///   headers are in hand. This is the `GET /response` path.
-    /// - Non-numeric / negative Content-Length → `invalid`.
-    /// - Request line with no space-separated method/path → `invalid`.
-    static func parseHTTPRequest(_ data: Data) -> HTTPParseResult {
-        // Find header/body separator. ASCII-safe: don't go through String.
-        let sep: [UInt8] = [0x0d, 0x0a, 0x0d, 0x0a]
-        guard let sepRange = data.range(of: Data(sep)) else {
-            return .needMore
-        }
-
-        let headerBytes = data.subdata(in: 0..<sepRange.lowerBound)
-        guard let headerStr = String(data: headerBytes, encoding: .utf8) else {
-            return .invalid("headers are not valid UTF-8")
-        }
-
-        let lines = headerStr.components(separatedBy: "\r\n")
-        guard let requestLine = lines.first else {
-            return .invalid("empty request")
-        }
-        let requestParts = requestLine.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false)
-        guard requestParts.count >= 2 else {
-            return .invalid("malformed request line: \(requestLine)")
-        }
-        let method = String(requestParts[0])
-        let path = String(requestParts[1])
-
-        var headers: [String: String] = [:]
-        for line in lines.dropFirst() where !line.isEmpty {
-            guard let colon = line.firstIndex(of: ":") else { continue }
-            let name = line[..<colon].lowercased()
-            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-            headers[name] = value
-        }
-
-        let expectedBodyLen: Int
-        if let raw = headers["content-length"] {
-            guard let n = Int(raw), n >= 0 else {
-                return .invalid("invalid Content-Length: \(raw)")
-            }
-            expectedBodyLen = n
-        } else {
-            expectedBodyLen = 0
-        }
-
-        let bodyStart = sepRange.upperBound
-        let bodyAvailable = data.count - bodyStart
-        if bodyAvailable < expectedBodyLen {
-            return .needMore
-        }
-
-        let body = expectedBodyLen == 0
-            ? Data()
-            : data.subdata(in: bodyStart..<(bodyStart + expectedBodyLen))
-        return .done(HTTPRequest(method: method, path: path, headers: headers, body: body))
     }
 
     /// Errors surfaced to POST /event callers so a bad payload no longer
