@@ -112,7 +112,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Multi-screen: panel follows the cursor's screen.
         stateManager.panel = panel
         screenFollower.onTargetChanged = { [weak panel] screen in
-            panel?.relocate(to: screen, animated: true)
+            panel?.relocate(to: screen)
         }
         screenFollower.start()
         // The initial panel was anchored to NSScreen.main in IslandPanel.init.
@@ -246,13 +246,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         default:                        // Skip — ask again next launch
             break
         }
-    }
-
-    deinit {
-        if let obs = screenChangeObserver {
-            NotificationCenter.default.removeObserver(obs)
-        }
-        screenFollower.stop()
     }
 
     private func reportInstallResult(_ result: HookInstaller.Result) {

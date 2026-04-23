@@ -123,79 +123,55 @@ class IslandPanel: NSPanel {
     /// `IslandMode.size(hasNotch:)`) happening during this window sees the
     /// correct statics — see the spec's "Synchronous ordering requirement"
     /// section.
-    func relocate(to target: NSScreen, animated: Bool = true) {
-        // Short-circuit: already there.
+    func relocate(to target: NSScreen) {
+        if let current = self.screen, current === target { return }
         if let current = self.screen,
-           Self.screenNumber(current) == Self.screenNumber(target) {
-            return
-        }
+           let a = current.displayID, let b = target.displayID, a == b { return }
 
-        let perform: () -> Void = { [weak self] in
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.15
+            self.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
             guard let self = self else { return }
-            // Synchronous on main: (1) update statics, (2) re-derive hasNotch,
-            // (3) compute frame, (4) setFrame. No awaits between.
             Self.applyScreenMetrics(target)
             let hasNotch = Self.detectHasNotch(for: target)
-
             let size = self.stateManager.mode.size(
                 hasNotch: hasNotch,
                 sessionRows: self.stateManager.activeSessions.count,
                 detailLines: self.stateManager.currentEvent?.detail
                     .map { min($0.split(separator: "\n").count, 10) } ?? 0
             )
-            let targetFrame = self.frameOnScreen(target, size: size)
-            self.setFrame(targetFrame, display: true)
-        }
-
-        guard animated else {
-            perform()
-            return
-        }
-
-        // Fade out → relocate → fade in.
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.15
-            self.animator().alphaValue = 0
-        }, completionHandler: {
-            perform()
-            NSAnimationContext.runAnimationGroup({ ctx in
+            self.setFrame(Self.topCenteredFrame(on: target, size: size), display: true)
+            NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.2
                 self.animator().alphaValue = 1
-            })
+            }
         })
     }
 
-    /// Convenience called from `IslandStateManager.pushEvent` — resolves
-    /// the cursor's screen and relocates there, if it differs.
+    /// Resolve the cursor's screen and relocate there. Called from
+    /// `IslandStateManager.pushEvent` so events appear on whichever
+    /// screen the user is currently working on.
     func relocateToCursorScreen() {
-        let point = NSEvent.mouseLocation
-        guard let target = NSScreen.screens.first(where: { $0.frame.contains(point) })
-              ?? NSScreen.main else { return }
-        relocate(to: target, animated: true)
+        guard let target = NSScreen.containing(NSEvent.mouseLocation) ?? NSScreen.main else { return }
+        relocate(to: target)
     }
 
-    // MARK: - Geometry helpers
-
-    private func frameOnScreen(_ screen: NSScreen, size: CGSize) -> NSRect {
+    /// Top-centered frame on `screen`. Used by both `init` (via inline
+    /// duplication for super.init ordering) and `updateSize` / `relocate`.
+    static func topCenteredFrame(on screen: NSScreen, size: CGSize) -> NSRect {
         let f = screen.frame
         let x = round(f.midX - size.width / 2)
         let y = f.maxY - size.height
         return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
-    private static func screenNumber(_ screen: NSScreen) -> CGDirectDisplayID? {
-        screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-    }
-
     func updateSize(to size: CGSize, animated: Bool = true) {
-        guard let screen = NSScreen.main else { return }
-        let screenFrame = screen.frame
-
-        let x = round(screenFrame.midX - size.width / 2)
-        // Compact/hidden: flush with top. Expanded: extends downward from top.
-        let y = screenFrame.maxY - size.height
-
-        let newFrame = NSRect(x: x, y: y, width: size.width, height: size.height)
+        // Use the screen the panel is currently on, not NSScreen.main.
+        // After `relocate(to:)`, the panel may be on a secondary screen;
+        // sizing against main would mis-place it.
+        guard let screen = self.screen ?? NSScreen.main else { return }
+        let newFrame = Self.topCenteredFrame(on: screen, size: size)
 
         if animated {
             NSAnimationContext.runAnimationGroup { context in
