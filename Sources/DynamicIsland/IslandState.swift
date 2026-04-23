@@ -193,6 +193,11 @@ class IslandStateManager: ObservableObject {
     /// Reference to server for sending permission responses
     weak var server: LocalServer?
 
+    /// Set once by `AppDelegate` after panel creation. Allows event
+    /// arrivals to nudge the panel to the cursor's current screen
+    /// without the state manager having to know what a screen is.
+    weak var panel: IslandPanel?
+
     private var eventQueue: [IslandEvent] = []
     private var dismissTimer: Timer?
     private var isProcessing = false
@@ -203,6 +208,10 @@ class IslandStateManager: ObservableObject {
 
     func pushEvent(_ event: IslandEvent) {
         DispatchQueue.main.async {
+            // Ensure the panel is on the cursor's current screen before
+            // we show the new event. No-op if already there.
+            self.panel?.relocateToCursorScreen()
+
             // In-place progress update: same title + both carry progress →
             // swap the event without re-animating entry or touching mode.
             // Preserves user's expanded/compact choice across updates.
