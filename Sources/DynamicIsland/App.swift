@@ -96,6 +96,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var server: LocalServer!
     var statusItem: NSStatusItem!
 
+    private let screenFollower = ScreenFollower()
+    private var screenChangeObserver: NSObjectProtocol?
+
     private static let hookChoiceKey = "hookInstallChoice"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -105,6 +108,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         server = LocalServer(stateManager: stateManager)
         server.start()
         stateManager.server = server
+
+        // Multi-screen: panel follows the cursor's screen.
+        stateManager.panel = panel
+        screenFollower.onTargetChanged = { [weak panel] screen in
+            panel?.relocate(to: screen, animated: true)
+        }
+        screenFollower.start()
+        // The initial panel was anchored to NSScreen.main in IslandPanel.init.
+        // If the cursor is already on a different screen at launch, relocate
+        // immediately instead of waiting for the first user mouse move.
+        screenFollower.forceEvaluateNow()
+
+        screenChangeObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.screenFollower.handleScreenTopologyChange()
+        }
 
         NotificationMonitor.shared.start(stateManager: stateManager)
 
@@ -224,6 +246,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         default:                        // Skip — ask again next launch
             break
         }
+    }
+
+    deinit {
+        if let obs = screenChangeObserver {
+            NotificationCenter.default.removeObserver(obs)
+        }
+        screenFollower.stop()
     }
 
     private func reportInstallResult(_ result: HookInstaller.Result) {
