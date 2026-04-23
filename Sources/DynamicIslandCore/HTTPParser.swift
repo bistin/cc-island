@@ -36,14 +36,21 @@ public enum HTTPParseResult: Equatable {
 /// keep-alive connection, etc.). Caller passes in everything received
 /// so far and re-calls on each new chunk.
 public enum HTTPParser {
+    private static let headerBodySeparator = Data([0x0d, 0x0a, 0x0d, 0x0a])
+
     /// Parse whatever's been accumulated so far.
     ///
     /// - Parameter data: bytes received so far on the connection.
     /// - Parameter maxTotalBytes: upper bound on `header-bytes + Content-Length`.
     ///   Returns `.tooLarge` without reading the body if declared size exceeds it.
+    ///
+    /// Headers are decoded as UTF-8. RFC 7230 technically allows
+    /// ISO-8859-1 in field values, but every client that talks to this
+    /// localhost server (`curl`, `URLSession`, the Swift hook binary)
+    /// emits ASCII-only headers, so strict UTF-8 is an acceptable
+    /// simplification.
     public static func parse(_ data: Data, maxTotalBytes: Int) -> HTTPParseResult {
-        let sep: [UInt8] = [0x0d, 0x0a, 0x0d, 0x0a]
-        guard let sepRange = data.range(of: Data(sep)) else {
+        guard let sepRange = data.range(of: headerBodySeparator) else {
             // Headers not yet complete. If we've already buffered more than
             // the caller's cap just looking for the separator, bail out
             // rather than keep reading forever.
@@ -70,45 +77,39 @@ public enum HTTPParser {
         let path = String(parts[1])
 
         var headers: [String: String] = [:]
-        var contentLengthValues: [String] = []
-        var transferEncodingValues: [String] = []
+        var seenContentLength: String?
+        var hasTransferEncoding = false
         for line in lines.dropFirst() where !line.isEmpty {
             guard let colon = line.firstIndex(of: ":") else { continue }
             let name = line[..<colon].lowercased()
             let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
             switch name {
             case "content-length":
-                contentLengthValues.append(value)
+                // RFC 7230 §3.3.2: duplicate values only acceptable if they agree.
+                if let previous = seenContentLength, previous != value {
+                    return .invalid("conflicting Content-Length: \(previous) vs \(value)")
+                }
+                seenContentLength = value
             case "transfer-encoding":
-                if !value.isEmpty { transferEncodingValues.append(value) }
+                if !value.isEmpty { hasTransferEncoding = true }
             default:
                 headers[name] = value
             }
         }
 
-        // HTTP/1.1 (RFC 7230 §3.3.3): if both Transfer-Encoding and
-        // Content-Length are present, or Transfer-Encoding is anything
-        // we don't decode, that's framing ambiguity — reject.
-        // Chunked decoding is not implemented, so any Transfer-Encoding
-        // is a hard reject.
-        if !transferEncodingValues.isEmpty {
+        // TE without a decoder is a framing hazard — reject.
+        if hasTransferEncoding {
             return .invalid("Transfer-Encoding not supported")
         }
 
         let expectedBodyLen: Int
-        if contentLengthValues.isEmpty {
-            expectedBodyLen = 0
-        } else {
-            // RFC 7230 §3.3.2: duplicate Content-Length values are only
-            // acceptable if they agree. Safer here: reject duplicates
-            // outright unless they're bit-identical.
-            guard Set(contentLengthValues).count == 1 else {
-                return .invalid("conflicting Content-Length values: \(contentLengthValues)")
-            }
-            guard let n = Int(contentLengthValues[0]), n >= 0 else {
-                return .invalid("invalid Content-Length: \(contentLengthValues[0])")
+        if let raw = seenContentLength {
+            guard let n = Int(raw), n >= 0 else {
+                return .invalid("invalid Content-Length: \(raw)")
             }
             expectedBodyLen = n
+        } else {
+            expectedBodyLen = 0
         }
 
         // Fail fast on declared oversize, before buffering more body.
@@ -121,10 +122,6 @@ public enum HTTPParser {
         let bodyAvailable = data.count - bodyStart
         if bodyAvailable < expectedBodyLen {
             return .needMore
-        }
-
-        if let clValue = contentLengthValues.first {
-            headers["content-length"] = clValue
         }
 
         let body = expectedBodyLen == 0
