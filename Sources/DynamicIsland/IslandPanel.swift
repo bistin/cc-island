@@ -11,28 +11,49 @@ class IslandPanel: NSPanel {
     static var notchHeight: CGFloat = 32
     static let earWidth: CGFloat = 140
 
-    /// Detect actual notch dimensions from the current screen
-    static func detectNotch() {
-        guard let screen = NSScreen.main,
+    /// True if this screen has the camera notch cutout. Honours
+    /// `DYNAMIC_ISLAND_FORCE_FALLBACK=1` so the fallback layout can be
+    /// tested on a notch Mac.
+    static func detectHasNotch(for screen: NSScreen) -> Bool {
+        if ProcessInfo.processInfo.environment["DYNAMIC_ISLAND_FORCE_FALLBACK"] == "1" {
+            return false
+        }
+        return screen.safeAreaInsets.top > 0
+    }
+
+    /// Notch metrics for a screen, or nil if the screen has no notch.
+    static func detectNotchDimensions(for screen: NSScreen) -> (width: CGFloat, height: CGFloat)? {
+        guard detectHasNotch(for: screen),
               let left = screen.auxiliaryTopLeftArea,
               let right = screen.auxiliaryTopRightArea else {
-            return
+            return nil
         }
-        notchWidth = right.minX - left.maxX - 1 // sub-pixel compensation
-        notchHeight = screen.safeAreaInsets.top
-        print("[DynamicIsland] Detected notch: \(notchWidth)pt × \(notchHeight)pt")
+        let width = right.minX - left.maxX - 1  // sub-pixel compensation
+        let height = screen.safeAreaInsets.top
+        return (width, height)
+    }
+
+    /// Updates the statics `notchWidth` / `notchHeight` for the given screen.
+    /// These values are read by `IslandMode.size(hasNotch:)` during panel
+    /// size computation, so every call site that changes which screen the
+    /// panel lives on MUST call this synchronously before reading size.
+    static func applyScreenMetrics(_ screen: NSScreen) {
+        if let dims = detectNotchDimensions(for: screen) {
+            notchWidth = dims.width
+            notchHeight = dims.height
+        }
+        // If the screen has no notch, leave the fallback defaults in the
+        // statics. IslandMode.size(hasNotch: false) ignores them anyway.
     }
 
     init(stateManager: IslandStateManager) {
         self.stateManager = stateManager
 
         let screen = NSScreen.main!
+        Self.applyScreenMetrics(screen)   // populate statics for this screen
+        let hasNotch = Self.detectHasNotch(for: screen)
+
         let screenFrame = screen.frame
-        let hasNotch = screen.safeAreaInsets.top > 0
-
-        // Detect actual notch size
-        if hasNotch { Self.detectNotch() }
-
         let totalWidth: CGFloat = hasNotch ? (Self.earWidth * 2 + Self.notchWidth) : 210
         let height: CGFloat = hasNotch ? Self.notchHeight : 38
 
@@ -82,9 +103,14 @@ class IslandPanel: NSPanel {
         orderFrontRegardless()
     }
 
+    /// Delegates to the static detector using the screen the panel is
+    /// currently on. Reads `self.screen` (an `NSWindow` property which
+    /// Cocoa updates whenever the panel's frame moves into another
+    /// display), falling back to `NSScreen.main` before the panel is
+    /// ordered front.
     var hasNotch: Bool {
-        guard let screen = NSScreen.main else { return false }
-        return screen.safeAreaInsets.top > 0
+        guard let screen = self.screen ?? NSScreen.main else { return false }
+        return Self.detectHasNotch(for: screen)
     }
 
     func updateSize(to size: CGSize, animated: Bool = true) {
