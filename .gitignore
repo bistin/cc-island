@@ -5,3 +5,10 @@ build/
 xcuserdata/
 DerivedData/
 .DS_Store
+
+# Local-only development docs — issue drafts, specs, plans.
+# Kept in the working tree for the author's reference but never
+# committed / pushed. Actual issues live on GitHub; this is a staging area.
+.issues/
+docs/superpowers/
+.superpowers/
