@@ -77,49 +77,174 @@ class LocalServer {
         listener?.cancel()
     }
 
+    /// Per-connection read buffer cap. Generous enough for any realistic hook
+    /// payload (current hook payloads top out ~2 KB) while still bounding the
+    /// damage from a misbehaving client.
+    private static let maxRequestBytes = 1_048_576 // 1 MiB
+
     private func handleConnection(_ connection: NWConnection) {
         connection.start(queue: .global(qos: .userInitiated))
+        readRequest(connection: connection, buffer: Data())
+    }
 
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, _, error in
-            guard let self, let data, error == nil else {
+    /// Keeps calling `connection.receive` until we have a complete HTTP
+    /// request (headers + Content-Length bytes of body), then dispatches.
+    ///
+    /// Previously the server called `receive` exactly once and assumed the
+    /// entire request arrived in that single callback. URLSession (used by
+    /// the Swift `island-hook` binary) writes headers and body in separate
+    /// syscalls, which the Network framework routinely surfaces as separate
+    /// receive callbacks — so the body was being lost. See
+    /// `.issues/fix-localserver-partial-read.md`.
+    private func readRequest(connection: NWConnection, buffer: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] chunk, _, isComplete, error in
+            guard let self else {
+                connection.cancel()
+                return
+            }
+            if let error = error {
+                print("[DynamicIsland] connection receive error: \(error)")
                 connection.cancel()
                 return
             }
 
-            let raw = String(data: data, encoding: .utf8) ?? ""
-            let firstLine = raw.components(separatedBy: "\r\n").first ?? ""
+            var buf = buffer
+            if let chunk = chunk { buf.append(chunk) }
 
-            if firstLine.contains("/response") {
-                // GET /response — hook script polls for user's permission choice
-                self.handleResponsePoll(connection)
-            } else if firstLine.contains("/event") {
-                // POST /event — parse body first so invalid payloads get a
-                // real error response instead of a misleading 200 OK.
-                do {
-                    guard let bodyRange = raw.range(of: "\r\n\r\n") else {
-                        throw EventError.missingBody
-                    }
-                    let bodyData = Data(raw[bodyRange.upperBound...].utf8)
-                    guard !bodyData.isEmpty else {
-                        throw EventError.missingBody
-                    }
-                    try self.processEvent(bodyData)
-                    self.sendHTTP(connection, body: "{\"status\":\"ok\"}")
-                } catch {
-                    let eventError = error as? EventError
-                    let code = eventError?.code ?? "internal_error"
-                    let message = eventError?.message ?? "\(error)"
-                    print("[DynamicIsland] /event error [\(code)]: \(message)")
-                    self.sendHTTP(
-                        connection,
-                        body: Self.errorBody(code: code, message: message),
-                        statusCode: "400 Bad Request"
-                    )
+            if buf.count > Self.maxRequestBytes {
+                print("[DynamicIsland] request exceeded \(Self.maxRequestBytes) bytes — dropping")
+                connection.cancel()
+                return
+            }
+
+            switch Self.parseHTTPRequest(buf) {
+            case .needMore:
+                if isComplete {
+                    // Client hung up mid-request. Nothing to do.
+                    connection.cancel()
+                    return
                 }
-            } else {
-                self.sendHTTP(connection, body: "{\"status\":\"ok\"}")
+                self.readRequest(connection: connection, buffer: buf)
+
+            case .done(let request):
+                self.dispatch(connection: connection, request: request)
+
+            case .invalid(let reason):
+                print("[DynamicIsland] malformed HTTP request: \(reason)")
+                self.sendHTTP(
+                    connection,
+                    body: Self.errorBody(code: "malformed_request", message: reason),
+                    statusCode: "400 Bad Request"
+                )
             }
         }
+    }
+
+    /// Route a fully-parsed HTTP request. Same semantics as the original
+    /// `handleConnection` switch — just unblocked from read-loop concerns.
+    private func dispatch(connection: NWConnection, request: HTTPRequest) {
+        if request.path.hasPrefix("/response") {
+            handleResponsePoll(connection)
+        } else if request.path.hasPrefix("/event") {
+            do {
+                guard !request.body.isEmpty else {
+                    throw EventError.missingBody
+                }
+                try processEvent(request.body)
+                sendHTTP(connection, body: "{\"status\":\"ok\"}")
+            } catch {
+                let eventError = error as? EventError
+                let code = eventError?.code ?? "internal_error"
+                let message = eventError?.message ?? "\(error)"
+                print("[DynamicIsland] /event error [\(code)]: \(message)")
+                sendHTTP(
+                    connection,
+                    body: Self.errorBody(code: code, message: message),
+                    statusCode: "400 Bad Request"
+                )
+            }
+        } else {
+            sendHTTP(connection, body: "{\"status\":\"ok\"}")
+        }
+    }
+
+    // MARK: - HTTP parsing
+
+    /// Fully-parsed HTTP request ready for dispatch.
+    struct HTTPRequest {
+        let method: String
+        let path: String
+        let headers: [String: String]   // keys lowercased
+        let body: Data
+    }
+
+    enum HTTPParseResult {
+        case needMore                   // keep reading
+        case done(HTTPRequest)
+        case invalid(String)            // 400 Bad Request
+    }
+
+    /// Pure parser: given whatever bytes we've accumulated so far, decide
+    /// whether we have a complete request, need more bytes, or should reject.
+    ///
+    /// Rules:
+    /// - Headers end at the first `\r\n\r\n`.
+    /// - Body length = `Content-Length` header (defaults to 0 if absent).
+    /// - `Content-Length: 0` (or absent) → request is complete as soon as
+    ///   headers are in hand. This is the `GET /response` path.
+    /// - Non-numeric / negative Content-Length → `invalid`.
+    /// - Request line with no space-separated method/path → `invalid`.
+    static func parseHTTPRequest(_ data: Data) -> HTTPParseResult {
+        // Find header/body separator. ASCII-safe: don't go through String.
+        let sep: [UInt8] = [0x0d, 0x0a, 0x0d, 0x0a]
+        guard let sepRange = data.range(of: Data(sep)) else {
+            return .needMore
+        }
+
+        let headerBytes = data.subdata(in: 0..<sepRange.lowerBound)
+        guard let headerStr = String(data: headerBytes, encoding: .utf8) else {
+            return .invalid("headers are not valid UTF-8")
+        }
+
+        let lines = headerStr.components(separatedBy: "\r\n")
+        guard let requestLine = lines.first else {
+            return .invalid("empty request")
+        }
+        let requestParts = requestLine.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: false)
+        guard requestParts.count >= 2 else {
+            return .invalid("malformed request line: \(requestLine)")
+        }
+        let method = String(requestParts[0])
+        let path = String(requestParts[1])
+
+        var headers: [String: String] = [:]
+        for line in lines.dropFirst() where !line.isEmpty {
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let name = line[..<colon].lowercased()
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            headers[name] = value
+        }
+
+        let expectedBodyLen: Int
+        if let raw = headers["content-length"] {
+            guard let n = Int(raw), n >= 0 else {
+                return .invalid("invalid Content-Length: \(raw)")
+            }
+            expectedBodyLen = n
+        } else {
+            expectedBodyLen = 0
+        }
+
+        let bodyStart = sepRange.upperBound
+        let bodyAvailable = data.count - bodyStart
+        if bodyAvailable < expectedBodyLen {
+            return .needMore
+        }
+
+        let body = expectedBodyLen == 0
+            ? Data()
+            : data.subdata(in: bodyStart..<(bodyStart + expectedBodyLen))
+        return .done(HTTPRequest(method: method, path: path, headers: headers, body: body))
     }
 
     /// Errors surfaced to POST /event callers so a bad payload no longer
