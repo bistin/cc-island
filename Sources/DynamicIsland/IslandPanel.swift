@@ -221,6 +221,33 @@ class IslandPanel: NSPanel {
         return size
     }
 
+    /// Re-read the current screen's notch metrics and republish them to
+    /// `stateManager.hasNotch`, then resize the frame to match. Covers the
+    /// case where an external display is disconnected: Cocoa silently
+    /// reparents the window to a remaining screen, but `relocate(to:)`
+    /// short-circuits because `self.screen` already equals the target —
+    /// so `hasNotch` would stay stuck on the unplugged display's kind and
+    /// SwiftUI would keep rendering the wrong layout.
+    func refreshLayoutForCurrentScreen() {
+        guard let screen = self.screen ?? NSScreen.main else { return }
+        Self.applyScreenMetrics(screen)
+        let hasNotch = Self.detectHasNotch(for: screen)
+        stateManager.hasNotch = hasNotch
+        let detailLines = stateManager.currentEvent?.detail
+            .map { min($0.split(separator: "\n").count, 10) } ?? 0
+        let size = Self.adjustedSize(
+            mode: stateManager.mode,
+            event: stateManager.currentEvent,
+            hasNotch: hasNotch,
+            sessionRows: stateManager.activeSessions.count,
+            detailLines: detailLines
+        )
+        let newFrame = Self.topCenteredFrame(on: screen, size: size)
+        setFrame(newFrame, display: true)
+        syncPulsePanelFrame(mainFrame: newFrame)
+        updatePulseVisibility()
+    }
+
     /// Top-centered frame on `screen`. Used by both `init` (via inline
     /// duplication for super.init ordering) and `updateSize` / `relocate`.
     static func topCenteredFrame(on screen: NSScreen, size: CGSize) -> NSRect {
