@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import DynamicIslandCore
 
 /// Lightweight HTTP server that receives Claude Code hook events.
 /// Listens on a configurable port (default 9423) for POST /event requests.
@@ -77,48 +78,99 @@ class LocalServer {
         listener?.cancel()
     }
 
+    /// Per-connection read buffer cap. Generous enough for any realistic hook
+    /// payload (current hook payloads top out ~2 KB) while still bounding the
+    /// damage from a misbehaving client.
+    private static let maxRequestBytes = 1_048_576 // 1 MiB
+
     private func handleConnection(_ connection: NWConnection) {
         connection.start(queue: .global(qos: .userInitiated))
+        readRequest(connection: connection, buffer: Data())
+    }
 
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, _, _, error in
-            guard let self, let data, error == nil else {
+    /// Keeps calling `connection.receive` until we have a complete HTTP
+    /// request (headers + Content-Length bytes of body), then dispatches.
+    ///
+    /// Previously the server called `receive` exactly once and assumed the
+    /// entire request arrived in that single callback. URLSession (used by
+    /// the Swift `island-hook` binary) writes headers and body in separate
+    /// syscalls, which the Network framework routinely surfaces as separate
+    /// receive callbacks — so the body was being lost. See
+    /// `.issues/fix-localserver-partial-read.md`.
+    private func readRequest(connection: NWConnection, buffer: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] chunk, _, isComplete, error in
+            guard let self else {
+                connection.cancel()
+                return
+            }
+            if let error = error {
+                print("[DynamicIsland] connection receive error: \(error)")
                 connection.cancel()
                 return
             }
 
-            let raw = String(data: data, encoding: .utf8) ?? ""
-            let firstLine = raw.components(separatedBy: "\r\n").first ?? ""
+            var buf = buffer
+            if let chunk = chunk { buf.append(chunk) }
 
-            if firstLine.contains("/response") {
-                // GET /response — hook script polls for user's permission choice
-                self.handleResponsePoll(connection)
-            } else if firstLine.contains("/event") {
-                // POST /event — parse body first so invalid payloads get a
-                // real error response instead of a misleading 200 OK.
-                do {
-                    guard let bodyRange = raw.range(of: "\r\n\r\n") else {
-                        throw EventError.missingBody
-                    }
-                    let bodyData = Data(raw[bodyRange.upperBound...].utf8)
-                    guard !bodyData.isEmpty else {
-                        throw EventError.missingBody
-                    }
-                    try self.processEvent(bodyData)
-                    self.sendHTTP(connection, body: "{\"status\":\"ok\"}")
-                } catch {
-                    let eventError = error as? EventError
-                    let code = eventError?.code ?? "internal_error"
-                    let message = eventError?.message ?? "\(error)"
-                    print("[DynamicIsland] /event error [\(code)]: \(message)")
-                    self.sendHTTP(
-                        connection,
-                        body: Self.errorBody(code: code, message: message),
-                        statusCode: "400 Bad Request"
-                    )
+            switch HTTPParser.parse(buf, maxTotalBytes: Self.maxRequestBytes) {
+            case .needMore:
+                if isComplete {
+                    // Client hung up mid-request. Nothing to do.
+                    connection.cancel()
+                    return
                 }
-            } else {
-                self.sendHTTP(connection, body: "{\"status\":\"ok\"}")
+                self.readRequest(connection: connection, buffer: buf)
+
+            case .done(let request):
+                self.dispatch(connection: connection, request: request)
+
+            case .invalid(let reason):
+                print("[DynamicIsland] malformed HTTP request: \(reason)")
+                self.sendHTTP(
+                    connection,
+                    body: Self.errorBody(code: "malformed_request", message: reason),
+                    statusCode: "400 Bad Request"
+                )
+
+            case .tooLarge:
+                // Fail fast: headers + declared Content-Length exceed our cap,
+                // or headers alone are pathologically large.
+                print("[DynamicIsland] request exceeded \(Self.maxRequestBytes) bytes — rejecting")
+                self.sendHTTP(
+                    connection,
+                    body: Self.errorBody(code: "payload_too_large",
+                                         message: "request exceeds \(Self.maxRequestBytes) bytes"),
+                    statusCode: "413 Payload Too Large"
+                )
             }
+        }
+    }
+
+    /// Route a fully-parsed HTTP request. Same semantics as the original
+    /// `handleConnection` switch — just unblocked from read-loop concerns.
+    private func dispatch(connection: NWConnection, request: HTTPRequest) {
+        if request.path.hasPrefix("/response") {
+            handleResponsePoll(connection)
+        } else if request.path.hasPrefix("/event") {
+            do {
+                guard !request.body.isEmpty else {
+                    throw EventError.missingBody
+                }
+                try processEvent(request.body)
+                sendHTTP(connection, body: "{\"status\":\"ok\"}")
+            } catch {
+                let eventError = error as? EventError
+                let code = eventError?.code ?? "internal_error"
+                let message = eventError?.message ?? "\(error)"
+                print("[DynamicIsland] /event error [\(code)]: \(message)")
+                sendHTTP(
+                    connection,
+                    body: Self.errorBody(code: code, message: message),
+                    statusCode: "400 Bad Request"
+                )
+            }
+        } else {
+            sendHTTP(connection, body: "{\"status\":\"ok\"}")
         }
     }
 
