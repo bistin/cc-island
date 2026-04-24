@@ -1,10 +1,12 @@
 import Foundation
 
-/// Deploys island-hook.sh and registers hook events for either Claude Code
-/// (~/.claude/settings.json) or GitHub Copilot (~/.copilot/hooks/hooks.json).
+/// Deploys the bundled `island-hook` binary and registers hook events for
+/// Claude Code (`~/.claude/settings.json`), GitHub Copilot
+/// (`{repo}/.github/hooks/hooks.json`), or OpenAI Codex (`~/.codex/hooks.json`).
 ///
-/// The two formats differ:
+/// The formats differ:
 ///   Claude Code: { "matcher": "pattern", "hooks": [{ type, command, timeout }] }
+///   Codex:       { "matcher": "pattern", "hooks": [{ type, command, timeout }] }
 ///   Copilot:     { type, command, timeout }   (flat, no matcher)
 enum HookInstaller {
 
@@ -21,11 +23,13 @@ enum HookInstaller {
         case claudeCode
         /// Copilot hooks are per-repo, written to `{repoPath}/.github/hooks/hooks.json`.
         case copilot(repoPath: URL)
+        case codex
 
         var displayName: String {
             switch self {
             case .claudeCode: return "Claude Code"
             case .copilot:    return "Copilot"
+            case .codex:      return "Codex"
             }
         }
 
@@ -37,6 +41,8 @@ enum HookInstaller {
             case .copilot:
                 // Binary lives globally; each repo's config just references it.
                 return home.appendingPathComponent(".copilot/hooks/dynamic-island-hook")
+            case .codex:
+                return home.appendingPathComponent(".codex/hooks/dynamic-island-hook")
             }
         }
 
@@ -47,6 +53,9 @@ enum HookInstaller {
                     .appendingPathComponent(".claude/settings.json")
             case .copilot(let repoPath):
                 return repoPath.appendingPathComponent(".github/hooks/hooks.json")
+            case .codex:
+                return FileManager.default.homeDirectoryForCurrentUser
+                    .appendingPathComponent(".codex/hooks.json")
             }
         }
 
@@ -54,6 +63,22 @@ enum HookInstaller {
             switch self {
             case .claudeCode: return true
             case .copilot:    return false
+            case .codex:      return true
+            }
+        }
+
+        var codexConfigURL: URL? {
+            guard case .codex = self else { return nil }
+            return FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".codex/config.toml")
+        }
+
+        fileprivate func commandString(for path: String) -> String {
+            switch self {
+            case .claudeCode, .copilot:
+                return path
+            case .codex:
+                return "ISLAND_SOURCE=codex \(shellQuote(path))"
             }
         }
 
@@ -87,6 +112,15 @@ enum HookInstaller {
                     ("sessionEnd",          "", 5),
                     ("errorOccurred",       "", 5),
                 ]
+            case .codex:
+                return [
+                    ("SessionStart",      "startup|resume", 5),
+                    ("PreToolUse",        "Bash",           5),
+                    ("PermissionRequest", "Bash",          30),
+                    ("PostToolUse",       "Bash",           5),
+                    ("UserPromptSubmit",  "",               5),
+                    ("Stop",              "",              30),
+                ]
             }
         }
     }
@@ -103,6 +137,9 @@ enum HookInstaller {
             let legacy = target.deployedHookURL.appendingPathExtension("sh")
             try? FileManager.default.removeItem(at: legacy)
             try writeSettings(target: target, shouldHaveHooks: true)
+            if case .codex = target {
+                try ensureCodexHooksFeatureEnabled()
+            }
             return .installed
         } catch {
             return .failed(error.localizedDescription)
@@ -174,21 +211,25 @@ enum HookInstaller {
               let hooks = root["hooks"] as? [String: Any] else {
             return false
         }
-        let path = target.deployedHookURL.path
+        let command = target.commandString(for: target.deployedHookURL.path)
 
         for (event, matcher, timeout) in target.events {
             guard let entries = hooks[event] as? [[String: Any]] else { return false }
             let found = entries.contains { entry in
-                entryMatches(entry, target: target, matcher: matcher, command: path, timeout: timeout)
+                entryMatches(entry, target: target, matcher: matcher, command: command, timeout: timeout)
             }
             if !found { return false }
+        }
+
+        if case .codex = target, !codexHooksFeatureEnabled() {
+            return false
         }
 
         // Reject stale DI entries still pointing at other paths.
         for (_, value) in hooks {
             for entry in (value as? [[String: Any]] ?? []) {
                 for cmd in commandsIn(entry: entry, target: target) {
-                    if isOurs(commandPath: cmd), cmd != path { return false }
+                    if isOurs(commandPath: cmd), cmd != command { return false }
                 }
             }
         }
@@ -219,6 +260,9 @@ enum HookInstaller {
                 .compactMap { $0["command"] as? String }
         case .copilot:
             return [entry["bash"] as? String].compactMap { $0 }
+        case .codex:
+            return (entry["hooks"] as? [[String: Any]] ?? [])
+                .compactMap { $0["command"] as? String }
         }
     }
 
@@ -236,6 +280,14 @@ enum HookInstaller {
         case .copilot:
             return (entry["bash"] as? String) == command
                 && (entry["timeoutSec"] as? Int) == timeout
+        case .codex:
+            let matchesEverything = matcher.isEmpty
+            let entryMatcher = entry["matcher"] as? String
+            guard matchesEverything ? (entryMatcher == nil || entryMatcher == "") : (entryMatcher == matcher),
+                  let inner = entry["hooks"] as? [[String: Any]] else { return false }
+            return inner.contains { h in
+                (h["command"] as? String) == command && (h["timeout"] as? Int) == timeout
+            }
         }
     }
 
@@ -278,10 +330,10 @@ enum HookInstaller {
         }
 
         if shouldHaveHooks {
-            let path = target.deployedHookURL.path
+            let command = target.commandString(for: target.deployedHookURL.path)
             for (event, matcher, timeout) in target.events {
                 var entries = hooks[event] as? [[String: Any]] ?? []
-                entries.append(newEntry(target: target, matcher: matcher, command: path, timeout: timeout))
+                entries.append(newEntry(target: target, matcher: matcher, command: command, timeout: timeout))
                 hooks[event] = entries
             }
         }
@@ -324,6 +376,122 @@ enum HookInstaller {
                 "bash": command,
                 "timeoutSec": timeout,
             ]
+        case .codex:
+            var entry: [String: Any] = [
+                "hooks": [[
+                    "type": "command",
+                    "command": command,
+                    "timeout": timeout,
+                ]],
+            ]
+            if !matcher.isEmpty {
+                entry["matcher"] = matcher
+            }
+            return entry
         }
+    }
+
+    // MARK: - Codex config.toml
+
+    private static func codexHooksFeatureEnabled() -> Bool {
+        guard let url = Target.codex.codexConfigURL,
+              let content = try? String(contentsOf: url, encoding: .utf8) else {
+            return false
+        }
+        return tomlBoolValue(for: "codex_hooks", inSection: "features", content: content) == true
+    }
+
+    private static func ensureCodexHooksFeatureEnabled() throws {
+        guard let url = Target.codex.codexConfigURL else { return }
+        let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let updated = setTomlBool(true, for: "codex_hooks", inSection: "features", content: existing)
+
+        let parent = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        try updated.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private static func tomlBoolValue(
+        for key: String,
+        inSection section: String,
+        content: String
+    ) -> Bool? {
+        var currentSection: String?
+        for rawLine in content.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("[") && line.hasSuffix("]") {
+                currentSection = String(line.dropFirst().dropLast())
+                continue
+            }
+            guard currentSection == section else { continue }
+            let bare = stripTomlComment(from: line)
+            guard let eq = bare.firstIndex(of: "=") else { continue }
+            let lhs = bare[..<eq].trimmingCharacters(in: .whitespaces)
+            guard lhs == key else { continue }
+            let rhs = bare[bare.index(after: eq)...].trimmingCharacters(in: .whitespaces).lowercased()
+            if rhs == "true" { return true }
+            if rhs == "false" { return false }
+        }
+        return nil
+    }
+
+    private static func setTomlBool(
+        _ value: Bool,
+        for key: String,
+        inSection section: String,
+        content: String
+    ) -> String {
+        let lineValue = "\(key) = \(value ? "true" : "false")"
+        if content.isEmpty {
+            return "[\(section)]\n\(lineValue)\n"
+        }
+
+        var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var sectionStart: Int?
+        var sectionEnd = lines.count
+
+        for (idx, raw) in lines.enumerated() {
+            let trimmed = raw.trimmingCharacters(in: .whitespaces)
+            if trimmed == "[\(section)]" {
+                sectionStart = idx
+                sectionEnd = lines.count
+                for next in (idx + 1)..<lines.count {
+                    let nextTrimmed = lines[next].trimmingCharacters(in: .whitespaces)
+                    if nextTrimmed.hasPrefix("[") && nextTrimmed.hasSuffix("]") {
+                        sectionEnd = next
+                        break
+                    }
+                }
+                break
+            }
+        }
+
+        if let sectionStart {
+            for idx in (sectionStart + 1)..<sectionEnd {
+                let stripped = stripTomlComment(from: lines[idx].trimmingCharacters(in: .whitespaces))
+                guard let eq = stripped.firstIndex(of: "=") else { continue }
+                let lhs = stripped[..<eq].trimmingCharacters(in: .whitespaces)
+                if lhs == key {
+                    lines[idx] = lineValue
+                    return lines.joined(separator: "\n")
+                }
+            }
+            lines.insert(lineValue, at: sectionStart + 1)
+            return lines.joined(separator: "\n")
+        }
+
+        var updated = content
+        if !updated.hasSuffix("\n") { updated += "\n" }
+        updated += "\n[\(section)]\n\(lineValue)\n"
+        return updated
+    }
+
+    private static func stripTomlComment(from line: String) -> String {
+        guard let idx = line.firstIndex(of: "#") else { return line }
+        return String(line[..<idx]).trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func shellQuote(_ string: String) -> String {
+        "'" + string.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }

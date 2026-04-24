@@ -114,7 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of warm orange.
 - `currentlyInSync` now byte-compares the deployed script against the
   bundled source. Previously, after upgrading the .app, the stale copy
-  at `~/.claude/hooks/dynamic-island-hook.sh` would keep running and
+  at `~/.claude/hooks/dynamic-island-hook` would keep running and
   silently drop new fields like `source`. Drift now triggers redeploy
   on next launch or `--install-hooks` invocation.
 
@@ -154,7 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (thanks @xero7689, [#2](https://github.com/bistin/cc-island/pull/2)).
 
 ### Changed
-- Hooks now deploy to `~/.claude/hooks/dynamic-island-hook.sh` (stable path independent
+- Hooks now deploy to `~/.claude/hooks/dynamic-island-hook` (stable path independent
   of the .app location). Moving the .app no longer breaks the registration.
 - Copilot hooks use the official schema per
   [docs.github.com](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/use-hooks):

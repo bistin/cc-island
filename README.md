@@ -18,7 +18,7 @@
 - **Progress 即時更新** — 長任務串流進度到瀏海，同 title POST 就會就地更新、不會重新動畫；附 `swift build` wrapper
 - **多 session 色標** — 同時跑多個 session，依 project 名稱自動配色區分；subagent 顯示為 `↳ agent_type`
 - **三家 AI 整合** — Claude Code / GitHub Copilot / OpenAI Codex hooks，自動偵測來源
-- **Menu bar icon** — 從選單列直接 Quit / Reinstall Hooks，不用 `pkill`
+- **Menu bar icon** — 從選單列直接 Quit / Reinstall Claude Code Hooks，不用 `pkill`
 - **HTTP API** — `POST http://127.0.0.1:9423/event`，任何工具都能整合
 - **自動適配** — 有瀏海用耳朵模式，沒瀏海用膠囊模式
 - **多螢幕跟隨游標** — 游標切到另一個螢幕停留 200ms，Island 會淡出淡入搬過去；`/event` 進來時也會立刻跳到游標所在螢幕。每個螢幕重新判斷 notch / 膠囊排版
@@ -117,34 +117,34 @@ DynamicIsland --uninstall-copilot-hooks /path/to/repo
 
 ### OpenAI Codex
 
-目前沒有 auto-install，需要手動設定。先把 hook binary 取出來：
+Codex hooks 也是全域安裝。現在可以直接用 CLI：
 
 ```bash
-mkdir -p ~/.codex/hooks
-cp /Applications/DynamicIsland.app/Contents/Resources/island-hook ~/.codex/hooks/dynamic-island-hook
-chmod +x ~/.codex/hooks/dynamic-island-hook
+DynamicIsland --install-codex-hooks
 ```
 
-然後建立 `~/.codex/hooks.json`（指向上面的 binary，並設 `ISLAND_SOURCE=codex` 讓 island 用綠色配色）：
+它會自動：
 
-```json
-{
-  "hooks": {
-    "PreToolUse":       [{ "matcher": "", "hooks": [{ "type": "command", "command": "ISLAND_SOURCE=codex ~/.codex/hooks/dynamic-island-hook", "timeout": 5 }] }],
-    "PostToolUse":      [{ "matcher": "", "hooks": [{ "type": "command", "command": "ISLAND_SOURCE=codex ~/.codex/hooks/dynamic-island-hook", "timeout": 5 }] }],
-    "UserPromptSubmit": [{ "matcher": "", "hooks": [{ "type": "command", "command": "ISLAND_SOURCE=codex ~/.codex/hooks/dynamic-island-hook", "timeout": 5 }] }],
-    "Stop":             [{ "matcher": "", "hooks": [{ "type": "command", "command": "ISLAND_SOURCE=codex ~/.codex/hooks/dynamic-island-hook", "timeout": 5 }] }],
-    "SessionStart":     [{ "matcher": "", "hooks": [{ "type": "command", "command": "ISLAND_SOURCE=codex ~/.codex/hooks/dynamic-island-hook", "timeout": 5 }] }]
-  }
-}
+- 把 `island-hook` binary 部署到 `~/.codex/hooks/dynamic-island-hook`
+- 在 `~/.codex/hooks.json` 註冊 Codex 支援的事件
+- 在 `~/.codex/config.toml` 啟用 `codex_hooks = true`
+
+移除：
+
+```bash
+DynamicIsland --uninstall-codex-hooks
 ```
 
-在 `~/.codex/config.toml` 啟用 hooks：
+產生的 `~/.codex/hooks.json` 會是官方 Codex hooks 文件格式，並透過 `ISLAND_SOURCE=codex` 讓 island 使用綠色配色。註冊事件如下：
 
-```toml
-[features]
-codex_hooks = true
-```
+- `SessionStart`（matcher: `startup|resume`）
+- `PreToolUse`（matcher: `Bash`）
+- `PermissionRequest`（matcher: `Bash`）
+- `PostToolUse`（matcher: `Bash`）
+- `UserPromptSubmit`
+- `Stop`
+
+> Codex 官方文件目前指出 `PreToolUse` / `PermissionRequest` / `PostToolUse` 的 matcher 主要作用在 `Bash`，`SessionStart` 則是 `startup|resume`。`UserPromptSubmit` 和 `Stop` 不需要 matcher。
 
 ---
 
@@ -223,7 +223,7 @@ done
 
 ## Common Commands
 
-最常用的 Quit / Reinstall Hooks 直接從 menu bar icon 點。CLI 操作：
+最常用的 Quit / Reinstall Claude Code Hooks 直接從 menu bar icon 點。CLI 操作：
 
 ```bash
 # Launch
@@ -238,8 +238,10 @@ pkill DynamicIsland
 # Hook management (auto-prompt also runs on first launch)
 DynamicIsland --install-hooks                    # Claude Code
 DynamicIsland --install-copilot-hooks [path]     # Copilot, defaults to cwd
+DynamicIsland --install-codex-hooks              # Codex
 DynamicIsland --uninstall-hooks
 DynamicIsland --uninstall-copilot-hooks [path]
+DynamicIsland --uninstall-codex-hooks
 DynamicIsland --help
 ```
 
@@ -249,7 +251,7 @@ DynamicIsland --help
 Sources/
 ├── DynamicIsland/                  # The app — AppKit + SwiftUI
 │   ├── App.swift                       # entry, CLI, NSAlert install prompt, menu bar
-│   ├── HookInstaller.swift             # auto-install hooks for Claude Code & Copilot
+│   ├── HookInstaller.swift             # installs Claude / Copilot / Codex hooks
 │   ├── IslandPanel.swift               # NSPanel, per-screen notch detection, relocate()
 │   ├── IslandState.swift               # state manager, immediate event display
 │   ├── IslandView.swift                # SwiftUI views (ears, thinking pulse, source stripe)
@@ -264,7 +266,7 @@ Sources/
 ├── DynamicIslandCore/              # Pure-logic app library (Foundation only)
 │   ├── HTTPParser.swift                # RFC 7230 request framing (duplicate CL / TE / oversize)
 │   └── ScreenResolver.swift            # point-in-rect screen lookup
-└── island-hook/                    # Tiny CLI binary deployed to ~/.claude/hooks/
+└── island-hook/                    # Tiny CLI binary deployed into each tool's hook dir
     └── main.swift                      # I/O shell — reads stdin, dispatches via core, POSTs
 
 Tests/

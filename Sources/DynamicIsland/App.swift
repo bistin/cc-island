@@ -13,6 +13,12 @@ struct DynamicIslandApp {
         if let repo = copilotRepoPath(in: args, after: "--uninstall-copilot-hooks") {
             runUninstallCLI(target: .copilot(repoPath: repo)); exit(0)
         }
+        if args.contains("--install-codex-hooks") {
+            runInstallCLI(target: .codex); exit(0)
+        }
+        if args.contains("--uninstall-codex-hooks") {
+            runUninstallCLI(target: .codex); exit(0)
+        }
         if args.contains("--help") || args.contains("-h") { printUsage(); exit(0) }
 
         let app = NSApplication.shared
@@ -85,6 +91,9 @@ struct DynamicIslandApp {
           --install-copilot-hooks [repoPath]   Install Copilot hooks to {repoPath}/.github/hooks/hooks.json
                                                (defaults to current directory).
           --uninstall-copilot-hooks [repoPath] Remove Copilot hooks from that repo.
+          --install-codex-hooks                Install Codex hooks (~/.codex/hooks.json) and enable
+                                               [features].codex_hooks in ~/.codex/config.toml.
+          --uninstall-codex-hooks              Remove Codex hooks from ~/.codex/hooks.json.
           --help, -h                           Show this help.
         """)
     }
@@ -223,7 +232,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Dynamic Island needs Claude Code hooks to receive tool events.
 
             Installing will:
-              • Copy island-hook.sh to ~/.claude/hooks/
+              • Copy island-hook to ~/.claude/hooks/dynamic-island-hook
               • Register hook events in ~/.claude/settings.json
 
             Other tools' hooks will not be touched.
@@ -231,6 +240,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             You can also run this later from a terminal:
               DynamicIsland --install-hooks            (Claude Code)
               DynamicIsland --install-copilot-hooks    (GitHub Copilot)
+              DynamicIsland --install-codex-hooks      (OpenAI Codex)
             """
         alert.addButton(withTitle: "Install")
         alert.addButton(withTitle: "Skip")
@@ -253,7 +263,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .installed:
             stateManager.pushEvent(IslandEvent(
                 title: "Hooks installed",
-                subtitle: "~/.claude/hooks/dynamic-island-hook.sh",
+                subtitle: "~/.claude/hooks/dynamic-island-hook",
                 style: .success,
                 duration: 4.0
             ))

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook",
             "timeout": 5
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook",
             "timeout": 5
           }
         ]
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook",
             "timeout": 5
           }
         ]
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook",
             "timeout": 5
           }
         ]
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook",
             "timeout": 5
           }
         ]
@@ -66,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook",
             "timeout": 5
           }
         ]
@@ -78,7 +78,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook",
             "timeout": 5
           }
         ]
@@ -90,7 +90,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook",
             "timeout": 5
           }
         ]
@@ -102,7 +102,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook.sh",
+            "command": "/Applications/DynamicIsland.app/Contents/Resources/island-hook",
             "timeout": 30
           }
         ]
