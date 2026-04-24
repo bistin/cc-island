@@ -6,7 +6,7 @@ struct IslandRootView: View {
     @ObservedObject var stateManager: IslandStateManager
     weak var panel: IslandPanel?
 
-    private var hasNotch: Bool { panel?.hasNotch ?? false }
+    private var hasNotch: Bool { stateManager.hasNotch }
 
     var body: some View {
         VStack(spacing: 0) {

@@ -82,6 +82,10 @@ class IslandPanel: NSPanel {
         self.ignoresMouseEvents = true
         self.acceptsMouseMovedEvents = true
 
+        // Seed the published flag so SwiftUI's initial layout knows which
+        // variant to render. Relocations update it in the completion handler.
+        stateManager.hasNotch = hasNotch
+
         let hostView = NSHostingView(
             rootView: IslandRootView(stateManager: stateManager, panel: self)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -163,6 +167,10 @@ class IslandPanel: NSPanel {
             guard let self = self else { return }
             Self.applyScreenMetrics(target)
             let hasNotch = Self.detectHasNotch(for: target)
+            // Publish the new layout kind so SwiftUI re-renders notch vs
+            // capsule. Must happen before setFrame so the view pass sees
+            // the right `hasNotch` against the new window geometry.
+            self.stateManager.hasNotch = hasNotch
             let size = Self.adjustedSize(
                 mode: self.stateManager.mode,
                 event: self.stateManager.currentEvent,
