@@ -17,32 +17,61 @@ import DynamicIslandCore
 ///   "progress": 0.0-1.0
 /// }
 /// ```
+/// Encodes the UI's permission decision for the long-polling hook.
+/// `rule` is non-nil only when the user chose "Always allow"; the hook
+/// forwards it to Claude Code as `updatedPermissions.rules[0]` so the
+/// pattern lands in the user's `localSettings`.
+struct PermissionDecision {
+    let behavior: String                     // "allow" | "deny"
+    let rule: PermissionRuleSuggestion?
+
+    var jsonBody: String {
+        var parts = ["\"behavior\":\"\(behavior)\""]
+        if let rule = rule {
+            parts.append(
+                "\"rule\":{\"toolName\":\"\(rule.toolName)\",\"ruleContent\":\(Self.encodeJSON(rule.ruleContent))}"
+            )
+        }
+        return "{\(parts.joined(separator: ","))}"
+    }
+
+    private static func encodeJSON(_ s: String) -> String {
+        if let data = try? JSONSerialization.data(withJSONObject: [s], options: []),
+           let jsonArr = String(data: data, encoding: .utf8) {
+            // Strip "[" and "]" to get just the quoted, escaped string.
+            return String(jsonArr.dropFirst().dropLast())
+        }
+        return "\"\"" // fallback — will not corrupt the envelope
+    }
+}
+
 class LocalServer {
     let port: UInt16
     private var listener: NWListener?
     private weak var stateManager: IslandStateManager?
 
     /// Pending permission response — hook script polls this
-    private var pendingResponse: String?
+    private var pendingResponse: PermissionDecision?
     private let responseLock = NSLock()
-    private var responseWaiters: [CheckedContinuation<String, Never>] = []
+    private var responseWaiters: [CheckedContinuation<PermissionDecision, Never>] = []
 
     init(stateManager: IslandStateManager, port: UInt16 = 9423) {
         self.stateManager = stateManager
         self.port = port
     }
 
-    /// Called from UI when user taps Allow/Deny
-    func setResponse(_ value: String) {
+    /// Called from UI when user taps Allow/Deny/Always.
+    func setResponse(_ behavior: String, rule: PermissionRuleSuggestion? = nil) {
+        let decision = PermissionDecision(behavior: behavior, rule: rule)
         responseLock.lock()
         let waiters = responseWaiters
         responseWaiters.removeAll()
         if waiters.isEmpty {
-            pendingResponse = value
+            pendingResponse = decision
         }
         responseLock.unlock()
         for waiter in waiters {
-            waiter.resume(returning: value)
+            waiter.resume(returning: decision)
         }
     }
 
@@ -223,20 +252,21 @@ class LocalServer {
         })
     }
 
-    /// Long-poll: waits up to 25s for user to tap Allow/Deny, then returns the choice
+    /// Long-poll: waits up to 25s for user to tap Allow/Deny/Always, then returns the choice
     private func handleResponsePoll(_ connection: NWConnection) {
+        let timeoutDecision = PermissionDecision(behavior: "timeout", rule: nil)
         responseLock.lock()
         if let response = pendingResponse {
             pendingResponse = nil
             responseLock.unlock()
-            sendHTTP(connection, body: "{\"decision\":\"\(response)\"}")
+            sendHTTP(connection, body: response.jsonBody)
             return
         }
         responseLock.unlock()
 
         // Long-poll: wait for response with timeout
         Task {
-            let result = await withTaskGroup(of: String.self, returning: String.self) { group in
+            let result = await withTaskGroup(of: PermissionDecision.self, returning: PermissionDecision.self) { group in
                 group.addTask {
                     await withCheckedContinuation { continuation in
                         self.responseLock.lock()
@@ -253,18 +283,14 @@ class LocalServer {
                 }
                 group.addTask {
                     try? await Task.sleep(nanoseconds: 25_000_000_000) // 25s timeout
-                    return "timeout"
+                    return timeoutDecision
                 }
                 let first = await group.next()!
                 group.cancelAll()
                 return first
             }
 
-            if result == "timeout" {
-                self.sendHTTP(connection, body: "{\"decision\":\"timeout\"}")
-            } else {
-                self.sendHTTP(connection, body: "{\"decision\":\"\(result)\"}")
-            }
+            self.sendHTTP(connection, body: result.jsonBody)
         }
     }
 
@@ -330,6 +356,13 @@ class LocalServer {
             icon = Self.iconForType(type)
         }
 
+        var suggestedRule: PermissionRuleSuggestion? = nil
+        if let dict = json["suggested_rule"] as? [String: Any],
+           let toolName = dict["toolName"] as? String,
+           let ruleContent = dict["ruleContent"] as? String {
+            suggestedRule = PermissionRuleSuggestion(toolName: toolName, ruleContent: ruleContent)
+        }
+
         let event = IslandEvent(
             icon: icon,
             title: title,
@@ -340,7 +373,8 @@ class LocalServer {
             progress: progress,
             persistent: persistent,
             project: project,
-            source: source
+            source: source,
+            suggestedRule: suggestedRule
         )
 
         // Route into the session tree: main session when no agent_id, else

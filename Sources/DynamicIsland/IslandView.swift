@@ -569,7 +569,10 @@ struct ExpandedPillView: View {
             }
 
             if event.style == .action {
-                PermissionActionButtons(stateManager: stateManager)
+                PermissionActionButtons(
+                    stateManager: stateManager,
+                    suggestedRule: event.suggestedRule
+                )
             }
 
             if let progress = event.progress {
@@ -826,40 +829,77 @@ struct PendingActionDots: View {
 
 struct PermissionActionButtons: View {
     @ObservedObject var stateManager: IslandStateManager
+    let suggestedRule: PermissionRuleSuggestion?
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button(action: {
-                stateManager.server?.setResponse("allow")
-                stateManager.dismiss()
-            }) {
-                Text("Allow")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(red: 0.2, green: 0.5, blue: 1.0))
-                    )
-            }
-            .buttonStyle(.plain)
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Button(action: {
+                    stateManager.server?.setResponse("allow")
+                    stateManager.dismiss()
+                }) {
+                    Text("Allow")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color(red: 0.2, green: 0.5, blue: 1.0))
+                        )
+                }
+                .buttonStyle(.plain)
 
-            Button(action: {
-                stateManager.server?.setResponse("deny")
-                stateManager.dismiss()
-            }) {
-                Text("Deny")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white.opacity(0.8))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.white.opacity(0.1))
-                    )
+                Button(action: {
+                    stateManager.server?.setResponse("deny")
+                    stateManager.dismiss()
+                }) {
+                    Text("Deny")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.white.opacity(0.1))
+                        )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+
+            // "Always allow" — sends the rule back to Claude Code so the
+            // pattern lands in `localSettings.permissions.allow` and future
+            // matching invocations stop asking. Amber tint (not the Allow
+            // blue) signals "this is a persistent preference" rather than a
+            // primary yes/no action, and shrinks the tap target to reduce
+            // mis-taps on the adjacent Allow button.
+            if let rule = suggestedRule {
+                Button(action: {
+                    stateManager.server?.setResponse("allow", rule: rule)
+                    stateManager.dismiss()
+                }) {
+                    HStack(spacing: 8) {
+                        Spacer()
+                        Text("🔓").font(.system(size: 11))
+                        Text("Always allow")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(Color(red: 1.0, green: 0.75, blue: 0.4))
+                        Text(rule.ruleContent)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(Color(red: 1.0, green: 0.82, blue: 0.59).opacity(0.75))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                    }
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill(Color(red: 1.0, green: 0.67, blue: 0.24).opacity(0.14))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }

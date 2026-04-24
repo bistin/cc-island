@@ -3,6 +3,14 @@ import SwiftUI
 
 // MARK: - Event Model
 
+/// Suggested permission rule forwarded from the PermissionRequest hook so the
+/// capsule can offer an "Always allow" button. Mirrors the shape Claude Code
+/// expects inside `updatedPermissions.rules[]`.
+struct PermissionRuleSuggestion: Equatable {
+    let toolName: String    // e.g. "Bash"
+    let ruleContent: String // e.g. "glab api *"
+}
+
 struct IslandEvent: Identifiable {
     let id: UUID
     let icon: String
@@ -15,6 +23,7 @@ struct IslandEvent: Identifiable {
     let persistent: Bool  // if true, won't auto-dismiss
     let project: String?  // small project name label
     let source: String?   // "claude" / "copilot" / "codex" — drives color
+    let suggestedRule: PermissionRuleSuggestion?
 
     /// Color signaling event source. Falls back to a deterministic
     /// project-name hash when the source isn't known, so legacy callers
@@ -58,7 +67,8 @@ struct IslandEvent: Identifiable {
         progress: Double? = nil,
         persistent: Bool = false,
         project: String? = nil,
-        source: String? = nil
+        source: String? = nil,
+        suggestedRule: PermissionRuleSuggestion? = nil
     ) {
         self.id = id
         self.icon = icon
@@ -71,6 +81,7 @@ struct IslandEvent: Identifiable {
         self.persistent = persistent
         self.project = project
         self.source = source
+        self.suggestedRule = suggestedRule
     }
 }
 
@@ -241,7 +252,9 @@ class IslandStateManager: ObservableObject {
                     detail: event.detail,
                     progress: event.progress,
                     persistent: event.persistent,
-                    project: event.project
+                    project: event.project,
+                    source: event.source,
+                    suggestedRule: event.suggestedRule
                 )
                 self.currentEvent = merged
                 if !event.persistent {
