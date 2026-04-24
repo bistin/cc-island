@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-04-24
+
+### Added
+- **Source-tinted thinking pulse** — the breathing glow below the notch
+  now follows the active AI: warm orange (Claude), GitHub violet
+  (Copilot), OpenAI green (Codex). Threaded from `island-hook`'s
+  `thinking_start` payload through `IslandStateManager.thinkingSource`,
+  resolved via the existing `IslandEvent.sourceColor`.
+- **`--install-codex-hooks` / `--uninstall-codex-hooks` CLI** — Codex
+  users no longer hand-write `~/.codex/hooks.json`. Deploys the hook
+  binary to `~/.codex/hooks/dynamic-island-hook`, registers events in
+  Codex's official schema (SessionStart on `startup|resume`; PreToolUse
+  / PermissionRequest / PostToolUse on `Bash`; UserPromptSubmit, Stop),
+  and flips `[features].codex_hooks = true` in `~/.codex/config.toml`.
+  Every command is prefixed with `ISLAND_SOURCE=codex` so the island
+  tints green.
+- **Capsule (no-notch) feature parity** — non-notch displays now get
+  the same permission UI as the notch layout: Allow/Deny buttons with
+  pulsing border, source dot, project-aware subtitle, scrollable diff
+  detail, and transparent margin around the pill for the glow halo to
+  render without clipping. Fixes #16.
+  ([#18](https://github.com/bistin/cc-island/pull/18) /
+  [#19](https://github.com/bistin/cc-island/pull/19), thanks @xero7689)
+
+### Fixed
+- **Clicks below the notch were blocked by the main panel's transparent
+  +30 pt strip.** Whenever an event was showing on the ears,
+  `ignoresMouseEvents = false` at the window level made clicks in the
+  strip beneath land on the island instead of passing through to the
+  app behind — a frustration on every "Reading", "Editing", or
+  permission event. The thinking pulse moved to a separate transparent
+  child window (`PulseWindow`, always `ignoresMouseEvents = true`), and
+  the main panel now shrinks to exactly `notchHeight` outside of the
+  expanded state. Browser tabs, menu extras, and command-line text
+  behind the notch are clickable during regular events again.
+- Pulse tint flashed the fallback color during the 0.8 s `stopThinking`
+  fade-out because `thinkingSource` was cleared immediately. Source is
+  now retained through the fade; next `startThinking` overwrites.
+- `relocate(to:)` computed new window size via `IslandMode.size(...)`
+  directly, while `updatePanelSize` post-processed the result through
+  the pulse-aware adjustments. After a screen change the pulse drifted
+  30 pt below the notch. Extracted `IslandPanel.adjustedSize(...)` as
+  the single source of truth and routed both call sites through it.
+- Pulse child window is now hidden in fallback (non-notch) mode — it's
+  a notch-adjacent visual; anchoring a 465 pt pulse strip 30 pt below
+  a smaller capsule pill looked like an orphaned floating glow.
+
 ## [1.6.0] - 2026-04-24
 
 ### Added
