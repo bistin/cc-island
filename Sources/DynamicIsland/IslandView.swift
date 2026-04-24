@@ -553,6 +553,9 @@ struct ExpandedPillView: View {
                     }
                 }
                 Spacer()
+                if stateManager.pendingActions.count > 0 {
+                    PendingActionDots(count: stateManager.pendingActions.count)
+                }
                 Button(action: { stateManager.dismiss() }) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16))
@@ -792,6 +795,30 @@ struct SessionRow: View {
     private var activityText: String {
         if session.lastSubtitle.isEmpty { return session.lastTitle }
         return "\(session.lastTitle) · \(session.lastSubtitle)"
+    }
+}
+
+// MARK: - Pending Action Dots
+
+/// Hints that more `.action` events are queued behind the current one,
+/// without a numeric badge. Up to three dots.
+struct PendingActionDots: View {
+    let count: Int
+    @State private var pulse = false
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<min(count, 3), id: \.self) { _ in
+                Circle()
+                    .fill(Color.white.opacity(pulse ? 0.85 : 0.45))
+                    .frame(width: 4, height: 4)
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
     }
 }
 

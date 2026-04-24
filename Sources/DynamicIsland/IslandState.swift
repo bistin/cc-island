@@ -196,6 +196,12 @@ class IslandStateManager: ObservableObject {
     /// Live view of main + subagent channels, sorted with main first
     @Published var activeSessions: [SessionChannel] = []
 
+    /// Pending `.action` events queued behind the current one. A new `.action`
+    /// arriving while another is awaiting a decision would otherwise overwrite
+    /// the Allow/Deny UI and let the older hook's `/response` long-poll time
+    /// out silently. FIFO — drained one-at-a-time by `dismiss()`.
+    @Published private(set) var pendingActions: [IslandEvent] = []
+
     /// Reference to server for sending permission responses
     weak var server: LocalServer?
 
@@ -250,22 +256,37 @@ class IslandStateManager: ObservableObject {
                 return
             }
 
-            // Normal path: show the latest event immediately, replacing any queue
-            self.eventQueue.removeAll()
-            self.dismissTimer?.invalidate()
-            self.isProcessing = true
-
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                self.currentEvent = event
-                self.mode = (event.style == .action) ? .expanded : .compact
+            // Guard: while an action is awaiting a decision, don't overwrite
+            // it. Queue another action; drop transient events (a 30s-old
+            // "Reading" surfacing later would confuse more than help).
+            if self.currentEvent?.style == .action {
+                if event.style == .action {
+                    self.pendingActions.append(event)
+                }
+                return
             }
 
-            if !event.persistent {
-                self.dismissTimer = Timer.scheduledTimer(withTimeInterval: event.duration, repeats: false) { [weak self] _ in
-                    DispatchQueue.main.async {
-                        guard let self, !self.isHovered else { return }
-                        self.dismiss()
-                    }
+            self.showEvent(event)
+        }
+    }
+
+    /// Actually swap `currentEvent` and drive the dismiss timer. Assumes
+    /// caller has already cleared any action guard.
+    private func showEvent(_ event: IslandEvent) {
+        eventQueue.removeAll()
+        dismissTimer?.invalidate()
+        isProcessing = true
+
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+            currentEvent = event
+            mode = (event.style == .action) ? .expanded : .compact
+        }
+
+        if !event.persistent {
+            dismissTimer = Timer.scheduledTimer(withTimeInterval: event.duration, repeats: false) { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self, !self.isHovered else { return }
+                    self.dismiss()
                 }
             }
         }
@@ -294,6 +315,15 @@ class IslandStateManager: ObservableObject {
 
     func dismiss() {
         dismissTimer?.invalidate()
+
+        // Drain the queued-action backlog before hiding — the next pending
+        // action surfaces here rather than waiting for an external event.
+        if !pendingActions.isEmpty {
+            let next = pendingActions.removeFirst()
+            showEvent(next)
+            return
+        }
+
         isProcessing = false
         withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
             mode = .hidden
