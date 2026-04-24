@@ -121,12 +121,8 @@ class IslandPanel: NSPanel {
 
         stateManager.$isThinking
             .receive(on: DispatchQueue.main)
-            .sink { [weak pulse] thinking in
-                if thinking {
-                    pulse?.orderFrontRegardless()
-                } else {
-                    pulse?.orderOut(nil)
-                }
+            .sink { [weak self] _ in
+                self?.updatePulseVisibility()
             }
             .store(in: &cancellables)
     }
@@ -178,6 +174,7 @@ class IslandPanel: NSPanel {
             let newFrame = Self.topCenteredFrame(on: target, size: size)
             self.setFrame(newFrame, display: true)
             self.syncPulsePanelFrame(mainFrame: newFrame)
+            self.updatePulseVisibility()
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.2
                 self.animator().alphaValue = 1
@@ -193,11 +190,9 @@ class IslandPanel: NSPanel {
         relocate(to: target)
     }
 
-    /// Post-processes the raw `IslandMode.size(...)` result for the two
-    /// cases that the enum doesn't know about:
-    ///   - notch compact/hidden: shrink to `notchHeight` — the pulse lives
-    ///     in its own window now, so the +30 pt strip just blocks clicks.
-    ///   - capsule expanded action: add 48 pt for the Allow/Deny button row.
+    /// Post-processes the raw `IslandMode.size(...)` result: in notch layout
+    /// compact/hidden shrink to `notchHeight` since the thinking pulse lives
+    /// in its own window now and the +30 pt strip would just block clicks.
     /// Called from both `IslandRootView.updatePanelSize` and `relocate(to:)`
     /// so every size computation stays in sync.
     static func adjustedSize(
@@ -214,9 +209,6 @@ class IslandPanel: NSPanel {
         )
         if hasNotch && mode != .expanded {
             size.height = notchHeight
-        }
-        if !hasNotch && mode == .expanded && event?.style == .action {
-            size.height += 48
         }
         return size
     }
@@ -264,6 +256,19 @@ class IslandPanel: NSPanel {
             width: w,
             height: h
         ), display: true)
+    }
+
+    /// Pulse only makes visual sense under the notch — in fallback/capsule
+    /// mode there's no notch to anchor it to, and our 465 pt pulse window
+    /// would float orphaned 30 pt below a narrower pill. Hide in that case.
+    /// Call whenever `isThinking` or the active screen changes.
+    func updatePulseVisibility() {
+        guard let pulse = pulsePanel else { return }
+        if stateManager.isThinking && hasNotch {
+            pulse.orderFrontRegardless()
+        } else {
+            pulse.orderOut(nil)
+        }
     }
 }
 

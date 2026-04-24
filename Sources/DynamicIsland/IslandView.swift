@@ -94,16 +94,19 @@ struct IslandRootView: View {
     @ViewBuilder
     private var fallbackLayout: some View {
         if stateManager.mode != .hidden, let event = stateManager.currentEvent {
-            switch stateManager.mode {
-            case .compact:
-                CompactPillView(event: event, stateManager: stateManager)
-                    .transition(.scale(scale: 0.8).combined(with: .opacity))
-            case .expanded:
-                ExpandedPillView(event: event, stateManager: stateManager)
-                    .transition(.scale(scale: 0.95).combined(with: .opacity))
-            default:
-                EmptyView()
+            Group {
+                switch stateManager.mode {
+                case .compact:
+                    CompactPillView(event: event, stateManager: stateManager)
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                case .expanded:
+                    ExpandedPillView(event: event, stateManager: stateManager)
+                        .transition(.scale(scale: 0.95).combined(with: .opacity))
+                default:
+                    EmptyView()
+                }
             }
+            .padding(12)
         }
     }
 }
@@ -460,26 +463,57 @@ struct CompactPillView: View {
     @ObservedObject var stateManager: IslandStateManager
     @State private var appeared = false
 
+    /// Project prefix joined to subtitle so the pill shows which concurrent
+    /// session an event came from. The notch ear has an equivalent sublabel
+    /// via `event.project`; the capsule can't spare a second line so we
+    /// inline it.
+    private var secondaryLine: String {
+        let project = event.project ?? ""
+        switch (project.isEmpty, event.subtitle.isEmpty) {
+        case (true, true):   return ""
+        case (true, false):  return event.subtitle
+        case (false, true):  return project
+        case (false, false): return "\(project) · \(event.subtitle)"
+        }
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            Text(event.icon)
-                .font(.system(size: 16))
-                .scaleEffect(appeared ? 1.0 : 0.5)
-                .animation(.spring(response: 0.3, dampingFraction: 0.6).delay(0.1), value: appeared)
+            // Source dot — the capsule's analogue to the ear's outer stripe.
+            Circle()
+                .fill(event.projectColor ?? event.style.color)
+                .frame(width: 6, height: 6)
 
-            Text(event.title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundColor(.white)
-                .lineLimit(1)
+            if !event.icon.isEmpty {
+                Text(event.icon)
+                    .font(.system(size: 15))
+                    .scaleEffect(appeared ? 1.0 : 0.5)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6).delay(0.1), value: appeared)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(event.title)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+
+                if !secondaryLine.isEmpty {
+                    Text(secondaryLine)
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundColor(.white.opacity(0.6))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
 
             if let progress = event.progress {
                 ProgressRing(progress: progress, color: event.style.color)
                     .frame(width: 18, height: 18)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .frame(height: 38)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .frame(height: secondaryLine.isEmpty ? 38 : 44)
         .background(
             Capsule()
                 .fill(.black)
@@ -497,11 +531,17 @@ struct CompactPillView: View {
 struct ExpandedPillView: View {
     let event: IslandEvent
     @ObservedObject var stateManager: IslandStateManager
+    @State private var actionPulse = false
+
+    private var isPulsing: Bool { event.style.isPulsing }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(event.icon).font(.system(size: 22))
+            HStack(spacing: 10) {
+                if !event.icon.isEmpty {
+                    Text(event.icon).font(.system(size: 22))
+                }
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(event.title)
                         .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -522,70 +562,55 @@ struct ExpandedPillView: View {
             }
 
             if let detail = event.detail {
-                DiffDetailView(text: detail)
+                DiffDetailView(text: detail, scrollable: true)
             }
 
             if event.style == .action {
-                HStack(spacing: 12) {
-                    Button(action: {
-                        stateManager.server?.setResponse("allow")
-                        stateManager.dismiss()
-                    }) {
-                        Text("Allow")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color(red: 0.2, green: 0.5, blue: 1.0))
-                            )
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(action: {
-                        stateManager.server?.setResponse("deny")
-                        stateManager.dismiss()
-                    }) {
-                        Text("Deny")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white.opacity(0.8))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color.white.opacity(0.1))
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
+                PermissionActionButtons(stateManager: stateManager)
             }
 
             if let progress = event.progress {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.white.opacity(0.1))
-                            .frame(height: 4)
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(event.style.color)
-                            .frame(width: geo.size.width * progress, height: 4)
-                            .animation(.easeOut(duration: 0.25), value: progress)
-                    }
-                }
-                .frame(height: 4)
+                LinearProgressBar(progress: progress, color: event.style.color)
             }
         }
         .padding(16)
-        .frame(width: 380)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 22)
                 .fill(.black)
-                .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(event.style.glowColor, lineWidth: 1))
-                .shadow(color: event.style.glowColor, radius: 12, y: 4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22)
+                        .strokeBorder(
+                            isPulsing
+                                ? (event.projectColor ?? event.style.color).opacity(actionPulse ? 0.85 : 0.25)
+                                : event.style.glowColor,
+                            lineWidth: isPulsing ? 1.5 : 1
+                        )
+                )
+                .shadow(
+                    color: isPulsing
+                        ? (event.projectColor ?? event.style.color).opacity(actionPulse ? 0.55 : 0.15)
+                        : event.style.glowColor,
+                    radius: 12, y: 4
+                )
         )
-        .onTapGesture { stateManager.collapse() }
+        .onTapGesture {
+            // Don't collapse on action — the user must pick Allow or Deny.
+            if event.style == .action { return }
+            stateManager.collapse()
+        }
+        .onAppear { updateActionPulse() }
+        .onChange(of: event.id) { _ in updateActionPulse() }
+    }
+
+    private func updateActionPulse() {
+        if isPulsing {
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                actionPulse = true
+            }
+        } else {
+            actionPulse = false
+        }
     }
 }
 
@@ -645,18 +670,47 @@ struct ThinkingPulseView: View {
 /// content renders as plain monospaced text.
 struct DiffDetailView: View {
     let text: String
+    /// When true, render all lines inside a vertical ScrollView capped at
+    /// `maxVisibleHeight`. Default false preserves the existing truncated
+    /// rendering used by the notch layout.
+    var scrollable: Bool = false
 
     private var lines: [Substring] { text.split(separator: "\n", omittingEmptySubsequences: false) }
 
+    private let maxVisibleHeight: CGFloat = 160
+
     var body: some View {
+        Group {
+            if scrollable {
+                ScrollView(.vertical, showsIndicators: true) {
+                    linesStack
+                        .padding(8)
+                }
+                .frame(maxHeight: maxVisibleHeight)
+            } else {
+                truncatedStack
+                    .padding(8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white.opacity(0.08))
+        )
+    }
+
+    private var linesStack: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                lineText(line)
+            }
+        }
+    }
+
+    private var truncatedStack: some View {
         VStack(alignment: .leading, spacing: 1) {
             ForEach(Array(lines.prefix(10).enumerated()), id: \.offset) { _, line in
-                Text(line)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(color(for: line))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                lineText(line)
             }
             if lines.count > 10 {
                 Text("… +\(lines.count - 10) more")
@@ -664,12 +718,15 @@ struct DiffDetailView: View {
                     .foregroundColor(.white.opacity(0.4))
             }
         }
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.white.opacity(0.08))
-        )
+    }
+
+    private func lineText(_ line: Substring) -> some View {
+        Text(line)
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundColor(color(for: line))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func color(for line: Substring) -> Color {
@@ -735,6 +792,70 @@ struct SessionRow: View {
     private var activityText: String {
         if session.lastSubtitle.isEmpty { return session.lastTitle }
         return "\(session.lastTitle) · \(session.lastSubtitle)"
+    }
+}
+
+// MARK: - Permission Action Buttons (shared by notch + capsule expanded)
+
+struct PermissionActionButtons: View {
+    @ObservedObject var stateManager: IslandStateManager
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: {
+                stateManager.server?.setResponse("allow")
+                stateManager.dismiss()
+            }) {
+                Text("Allow")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(red: 0.2, green: 0.5, blue: 1.0))
+                    )
+            }
+            .buttonStyle(.plain)
+
+            Button(action: {
+                stateManager.server?.setResponse("deny")
+                stateManager.dismiss()
+            }) {
+                Text("Deny")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.white.opacity(0.1))
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+// MARK: - Linear Progress Bar (shared by notch + capsule expanded)
+
+struct LinearProgressBar: View {
+    let progress: Double
+    let color: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.white.opacity(0.1))
+                    .frame(height: 4)
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(color)
+                    .frame(width: geo.size.width * progress, height: 4)
+                    .animation(.easeOut(duration: 0.25), value: progress)
+            }
+        }
+        .frame(height: 4)
     }
 }
 

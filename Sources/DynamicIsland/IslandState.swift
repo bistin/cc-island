@@ -83,6 +83,8 @@ enum EventStyle: String, Codable {
     case action // Needs user attention — persistent, pulsing, with buttons
     case reminder // Needs attention — pulsing, but no buttons
 
+    var isPulsing: Bool { self == .action || self == .reminder }
+
     var color: Color {
         switch self {
         case .info: return .white
@@ -170,10 +172,13 @@ enum IslandMode: Equatable {
             case .hidden: return CGSize(width: w, height: IslandPanel.notchHeight + 30)
             }
         } else {
+            // Sizes include a transparent margin around the pill so the
+            // drop shadow / pulse border can render without clipping at
+            // the window edge, and so clicks fall through beside the pill.
             switch self {
-            case .compact: return CGSize(width: 210, height: 38)
-            case .expanded: return CGSize(width: 380, height: 140 + treeExtra + detailExtra)
-            case .hidden: return CGSize(width: 210, height: 38)
+            case .compact: return CGSize(width: 260, height: 68)
+            case .expanded: return CGSize(width: 420, height: 210 + treeExtra + detailExtra)
+            case .hidden: return CGSize(width: 260, height: 68)
             }
         }
     }
