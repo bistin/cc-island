@@ -11,28 +11,49 @@ class IslandPanel: NSPanel {
     static var notchHeight: CGFloat = 32
     static let earWidth: CGFloat = 140
 
-    /// Detect actual notch dimensions from the current screen
-    static func detectNotch() {
-        guard let screen = NSScreen.main,
+    /// True if this screen has the camera notch cutout. Honours
+    /// `DYNAMIC_ISLAND_FORCE_FALLBACK=1` so the fallback layout can be
+    /// tested on a notch Mac.
+    static func detectHasNotch(for screen: NSScreen) -> Bool {
+        if ProcessInfo.processInfo.environment["DYNAMIC_ISLAND_FORCE_FALLBACK"] == "1" {
+            return false
+        }
+        return screen.safeAreaInsets.top > 0
+    }
+
+    /// Notch metrics for a screen, or nil if the screen has no notch.
+    static func detectNotchDimensions(for screen: NSScreen) -> (width: CGFloat, height: CGFloat)? {
+        guard detectHasNotch(for: screen),
               let left = screen.auxiliaryTopLeftArea,
               let right = screen.auxiliaryTopRightArea else {
-            return
+            return nil
         }
-        notchWidth = right.minX - left.maxX - 1 // sub-pixel compensation
-        notchHeight = screen.safeAreaInsets.top
-        print("[DynamicIsland] Detected notch: \(notchWidth)pt × \(notchHeight)pt")
+        let width = right.minX - left.maxX - 1  // sub-pixel compensation
+        let height = screen.safeAreaInsets.top
+        return (width, height)
+    }
+
+    /// Updates the statics `notchWidth` / `notchHeight` for the given screen.
+    /// These values are read by `IslandMode.size(hasNotch:)` during panel
+    /// size computation, so every call site that changes which screen the
+    /// panel lives on MUST call this synchronously before reading size.
+    static func applyScreenMetrics(_ screen: NSScreen) {
+        if let dims = detectNotchDimensions(for: screen) {
+            notchWidth = dims.width
+            notchHeight = dims.height
+        }
+        // If the screen has no notch, leave the fallback defaults in the
+        // statics. IslandMode.size(hasNotch: false) ignores them anyway.
     }
 
     init(stateManager: IslandStateManager) {
         self.stateManager = stateManager
 
         let screen = NSScreen.main!
+        Self.applyScreenMetrics(screen)   // populate statics for this screen
+        let hasNotch = Self.detectHasNotch(for: screen)
+
         let screenFrame = screen.frame
-        let hasNotch = screen.safeAreaInsets.top > 0
-
-        // Detect actual notch size
-        if hasNotch { Self.detectNotch() }
-
         let totalWidth: CGFloat = hasNotch ? (Self.earWidth * 2 + Self.notchWidth) : 210
         let height: CGFloat = hasNotch ? Self.notchHeight : 38
 
@@ -82,20 +103,75 @@ class IslandPanel: NSPanel {
         orderFrontRegardless()
     }
 
+    /// Delegates to the static detector using the screen the panel is
+    /// currently on. Reads `self.screen` (an `NSWindow` property which
+    /// Cocoa updates whenever the panel's frame moves into another
+    /// display), falling back to `NSScreen.main` before the panel is
+    /// ordered front.
     var hasNotch: Bool {
-        guard let screen = NSScreen.main else { return false }
-        return screen.safeAreaInsets.top > 0
+        guard let screen = self.screen ?? NSScreen.main else { return false }
+        return Self.detectHasNotch(for: screen)
+    }
+
+    /// Relocate the panel to a different screen. Fades out, re-evaluates
+    /// screen-dependent notch metrics, repositions + resizes for the new
+    /// screen, then fades in. Safe to call when the requested screen is
+    /// already the panel's current screen — short-circuits.
+    ///
+    /// Must be called on the main thread. The metric update + setFrame
+    /// sequence is synchronous so any size read (via
+    /// `IslandMode.size(hasNotch:)`) happening during this window sees the
+    /// correct statics — see the spec's "Synchronous ordering requirement"
+    /// section.
+    func relocate(to target: NSScreen) {
+        if let current = self.screen, current === target { return }
+        if let current = self.screen,
+           let a = current.displayID, let b = target.displayID, a == b { return }
+
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.15
+            self.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            guard let self = self else { return }
+            Self.applyScreenMetrics(target)
+            let hasNotch = Self.detectHasNotch(for: target)
+            let size = self.stateManager.mode.size(
+                hasNotch: hasNotch,
+                sessionRows: self.stateManager.activeSessions.count,
+                detailLines: self.stateManager.currentEvent?.detail
+                    .map { min($0.split(separator: "\n").count, 10) } ?? 0
+            )
+            self.setFrame(Self.topCenteredFrame(on: target, size: size), display: true)
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.2
+                self.animator().alphaValue = 1
+            }
+        })
+    }
+
+    /// Resolve the cursor's screen and relocate there. Called from
+    /// `IslandStateManager.pushEvent` so events appear on whichever
+    /// screen the user is currently working on.
+    func relocateToCursorScreen() {
+        guard let target = NSScreen.containing(NSEvent.mouseLocation) ?? NSScreen.main else { return }
+        relocate(to: target)
+    }
+
+    /// Top-centered frame on `screen`. Used by both `init` (via inline
+    /// duplication for super.init ordering) and `updateSize` / `relocate`.
+    static func topCenteredFrame(on screen: NSScreen, size: CGSize) -> NSRect {
+        let f = screen.frame
+        let x = round(f.midX - size.width / 2)
+        let y = f.maxY - size.height
+        return NSRect(x: x, y: y, width: size.width, height: size.height)
     }
 
     func updateSize(to size: CGSize, animated: Bool = true) {
-        guard let screen = NSScreen.main else { return }
-        let screenFrame = screen.frame
-
-        let x = round(screenFrame.midX - size.width / 2)
-        // Compact/hidden: flush with top. Expanded: extends downward from top.
-        let y = screenFrame.maxY - size.height
-
-        let newFrame = NSRect(x: x, y: y, width: size.width, height: size.height)
+        // Use the screen the panel is currently on, not NSScreen.main.
+        // After `relocate(to:)`, the panel may be on a secondary screen;
+        // sizing against main would mis-place it.
+        guard let screen = self.screen ?? NSScreen.main else { return }
+        let newFrame = Self.topCenteredFrame(on: screen, size: size)
 
         if animated {
             NSAnimationContext.runAnimationGroup { context in
