@@ -381,57 +381,12 @@ struct ExpandedContentView: View {
                 DiffDetailView(text: detail)
             }
 
-            // Permission buttons for action events
             if event.style == .action {
-                HStack(spacing: 12) {
-                    Button(action: {
-                        stateManager.server?.setResponse("allow")
-                        stateManager.dismiss()
-                    }) {
-                        Text("Allow")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color(red: 0.2, green: 0.5, blue: 1.0))
-                            )
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(action: {
-                        stateManager.server?.setResponse("deny")
-                        stateManager.dismiss()
-                    }) {
-                        Text("Deny")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white.opacity(0.8))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color.white.opacity(0.1))
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
+                PermissionActionButtons(stateManager: stateManager)
             }
 
-            // Progress bar
             if let progress = event.progress {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(Color.white.opacity(0.1))
-                            .frame(height: 4)
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(event.style.color)
-                            .frame(width: geo.size.width * progress, height: 4)
-                            .animation(.easeOut(duration: 0.25), value: progress)
-                    }
-                }
-                .frame(height: 4)
+                LinearProgressBar(progress: progress, color: event.style.color)
             }
 
             // Active session tree — main + subagents
