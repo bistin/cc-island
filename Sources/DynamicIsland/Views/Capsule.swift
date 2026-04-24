@@ -86,7 +86,8 @@ struct CompactPillView: View {
         .frame(height: event.subtitle.isEmpty ? 38 : 44)
         .background(
             Capsule()
-                .fill(.black)
+                .fill(.regularMaterial)
+                .environment(\.colorScheme, .dark)
                 .overlay(Capsule().strokeBorder(event.style.glowColor, lineWidth: 1))
                 .shadow(color: event.style.glowColor, radius: 8, x: 0, y: 2)
         )
@@ -198,7 +199,8 @@ struct ExpandedPillView: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 22)
-                .fill(.black)
+                .fill(.regularMaterial)
+                .environment(\.colorScheme, .dark)
                 .overlay(
                     RoundedRectangle(cornerRadius: 22)
                         .strokeBorder(
