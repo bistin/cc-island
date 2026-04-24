@@ -221,22 +221,22 @@ struct LeftEarView: View {
             }
 
             if isVisible, let event {
+                // EXPERIMENT: flip title/project on notch ear.
+                // Primary = project (when present), secondary = action.
+                // Source is already signalled by the outer edge stripe,
+                // so no separate dot inside the text.
+                let hasProject = (event.project?.isEmpty == false)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(event.title)
-                        .font(.system(size: event.project != nil ? 11 : 12, weight: isPulsing ? .semibold : .medium))
+                    Text(hasProject ? (event.project ?? "") : event.title)
+                        .font(.system(size: hasProject ? 11 : 12, weight: isPulsing ? .semibold : .medium))
                         .foregroundColor(isPulsing ? event.style.color : .white)
                         .lineLimit(1)
 
-                    if let project = event.project {
-                        HStack(spacing: 3) {
-                            Circle()
-                                .fill(event.projectColor ?? .white.opacity(0.4))
-                                .frame(width: 4, height: 4)
-                            Text(project)
-                                .font(.system(size: 8, weight: .regular))
-                                .foregroundColor(.white.opacity(0.4))
-                                .lineLimit(1)
-                        }
+                    if hasProject {
+                        Text(event.title)
+                            .font(.system(size: 8, weight: .regular))
+                            .foregroundColor(.white.opacity(0.5))
+                            .lineLimit(1)
                     }
                 }
                 .padding(.leading, 12)
