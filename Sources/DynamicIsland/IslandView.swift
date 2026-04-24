@@ -95,16 +95,19 @@ struct IslandRootView: View {
     @ViewBuilder
     private var fallbackLayout: some View {
         if stateManager.mode != .hidden, let event = stateManager.currentEvent {
-            switch stateManager.mode {
-            case .compact:
-                CompactPillView(event: event, stateManager: stateManager)
-                    .transition(.scale(scale: 0.8).combined(with: .opacity))
-            case .expanded:
-                ExpandedPillView(event: event, stateManager: stateManager)
-                    .transition(.scale(scale: 0.95).combined(with: .opacity))
-            default:
-                EmptyView()
+            Group {
+                switch stateManager.mode {
+                case .compact:
+                    CompactPillView(event: event, stateManager: stateManager)
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                case .expanded:
+                    ExpandedPillView(event: event, stateManager: stateManager)
+                        .transition(.scale(scale: 0.95).combined(with: .opacity))
+                default:
+                    EmptyView()
+                }
             }
+            .padding(12)
         }
     }
 }
@@ -498,11 +501,17 @@ struct CompactPillView: View {
 struct ExpandedPillView: View {
     let event: IslandEvent
     @ObservedObject var stateManager: IslandStateManager
+    @State private var actionPulse = false
+
+    private var isPulsing: Bool { event.style.isPulsing }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(event.icon).font(.system(size: 22))
+            HStack(spacing: 10) {
+                if !event.icon.isEmpty {
+                    Text(event.icon).font(.system(size: 22))
+                }
+
                 VStack(alignment: .leading, spacing: 2) {
                     Text(event.title)
                         .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -523,24 +532,55 @@ struct ExpandedPillView: View {
             }
 
             if let detail = event.detail {
-                Text(detail)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.8))
-                    .lineLimit(3)
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+                DiffDetailView(text: detail)
+            }
+
+            if event.style == .action {
+                PermissionActionButtons(stateManager: stateManager)
+            }
+
+            if let progress = event.progress {
+                LinearProgressBar(progress: progress, color: event.style.color)
             }
         }
         .padding(16)
-        .frame(width: 380, height: 140)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 22)
                 .fill(.black)
-                .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(event.style.glowColor, lineWidth: 1))
-                .shadow(color: event.style.glowColor, radius: 12, y: 4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22)
+                        .strokeBorder(
+                            isPulsing
+                                ? (event.projectColor ?? event.style.color).opacity(actionPulse ? 0.85 : 0.25)
+                                : event.style.glowColor,
+                            lineWidth: isPulsing ? 1.5 : 1
+                        )
+                )
+                .shadow(
+                    color: isPulsing
+                        ? (event.projectColor ?? event.style.color).opacity(actionPulse ? 0.55 : 0.15)
+                        : event.style.glowColor,
+                    radius: 12, y: 4
+                )
         )
-        .onTapGesture { stateManager.collapse() }
+        .onTapGesture {
+            // Don't collapse on action — the user must pick Allow or Deny.
+            if event.style == .action { return }
+            stateManager.collapse()
+        }
+        .onAppear { updateActionPulse() }
+        .onChange(of: event.id) { _ in updateActionPulse() }
+    }
+
+    private func updateActionPulse() {
+        if isPulsing {
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                actionPulse = true
+            }
+        } else {
+            actionPulse = false
+        }
     }
 }
 
@@ -668,6 +708,70 @@ struct SessionRow: View {
     private var activityText: String {
         if session.lastSubtitle.isEmpty { return session.lastTitle }
         return "\(session.lastTitle) · \(session.lastSubtitle)"
+    }
+}
+
+// MARK: - Permission Action Buttons (shared by notch + capsule expanded)
+
+struct PermissionActionButtons: View {
+    @ObservedObject var stateManager: IslandStateManager
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: {
+                stateManager.server?.setResponse("allow")
+                stateManager.dismiss()
+            }) {
+                Text("Allow")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color(red: 0.2, green: 0.5, blue: 1.0))
+                    )
+            }
+            .buttonStyle(.plain)
+
+            Button(action: {
+                stateManager.server?.setResponse("deny")
+                stateManager.dismiss()
+            }) {
+                Text("Deny")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white.opacity(0.8))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.white.opacity(0.1))
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+// MARK: - Linear Progress Bar (shared by notch + capsule expanded)
+
+struct LinearProgressBar: View {
+    let progress: Double
+    let color: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.white.opacity(0.1))
+                    .frame(height: 4)
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(color)
+                    .frame(width: geo.size.width * progress, height: 4)
+                    .animation(.easeOut(duration: 0.25), value: progress)
+            }
+        }
+        .frame(height: 4)
     }
 }
 
