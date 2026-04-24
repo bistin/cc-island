@@ -358,12 +358,10 @@ class LocalServer {
 
         let style = EventStyle(rawValue: styleName) ?? .claude
 
-        let icon: String
-        if let customIcon = json["icon"] as? String {
-            icon = customIcon
-        } else {
-            icon = Self.iconForType(type)
-        }
+        // Icon is optional and only renders on the capsule. Hook-driven
+        // events don't set one; explicit callers (NotificationMonitor,
+        // manual POSTs) can still pass an emoji via the `icon` field.
+        let icon = json["icon"] as? String ?? ""
 
         // Sub-decoders below live in `DynamicIslandCore` so the
         // parsing rules (3-cap / 20-char trim / strict freeform_replyable
@@ -422,20 +420,4 @@ class LocalServer {
         stateManager?.pushEvent(event)
     }
 
-    private static func iconForType(_ type: String) -> String {
-        switch type {
-        case "tool_start": return "🔧"
-        case "tool_end": return "✅"
-        case "notification": return "🔔"
-        case "stop": return "🏁"
-        case "error": return "❌"
-        case "thinking": return "🧠"
-        case "edit": return "✏️"
-        case "bash": return "💻"
-        case "search": return "🔍"
-        case "read": return "📖"
-        case "write": return "📝"
-        default: return "🏝️"
-        }
-    }
 }

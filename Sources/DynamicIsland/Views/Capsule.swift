@@ -6,6 +6,8 @@ struct CompactPillView: View {
     let event: IslandEvent
     @ObservedObject var stateManager: IslandStateManager
     @State private var appeared = false
+    @State private var pingScale: CGFloat = 1
+    @State private var pingOpacity: Double = 0
 
     /// Promote `event.project` to the primary title slot whenever we have
     /// one — multi-session users read "which session" before "what action".
@@ -19,12 +21,25 @@ struct CompactPillView: View {
 
     private var actionChipText: String? { hasProject ? event.title : nil }
 
+    private var dotColor: Color { event.projectColor ?? event.style.color }
+
     var body: some View {
         HStack(spacing: 8) {
-            // Source dot — the capsule's analogue to the ear's outer stripe.
-            Circle()
-                .fill(event.projectColor ?? event.style.color)
-                .frame(width: 6, height: 6)
+            // Source dot with a one-shot radar ping when a new event arrives.
+            // The ring expands + fades; the dot itself stays static.
+            ZStack {
+                Circle()
+                    .stroke(dotColor, lineWidth: 1)
+                    .frame(width: 6, height: 6)
+                    .scaleEffect(pingScale)
+                    .opacity(pingOpacity)
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: 6, height: 6)
+            }
+            .frame(width: 18, height: 18)
+            .onAppear { emitPing() }
+            .onChange(of: event.id) { _ in emitPing() }
 
             if !event.icon.isEmpty {
                 Text(event.icon)
@@ -78,6 +93,15 @@ struct CompactPillView: View {
         .onTapGesture { stateManager.expand() }
         .onAppear { appeared = true }
         .onDisappear { appeared = false }
+    }
+
+    private func emitPing() {
+        pingScale = 1
+        pingOpacity = 0.9
+        withAnimation(.easeOut(duration: 0.7)) {
+            pingScale = 3.2
+            pingOpacity = 0
+        }
     }
 }
 
