@@ -38,7 +38,7 @@ struct IslandEvent: Identifiable {
         return palette[Int(hash) % palette.count]
     }
 
-    private static func sourceColor(_ source: String) -> Color? {
+    static func sourceColor(_ source: String) -> Color? {
         switch source.lowercased() {
         case "claude":  return Color(red: 0.85, green: 0.65, blue: 0.45) // warm orange
         case "copilot": return Color(red: 0.65, green: 0.50, blue: 0.95) // GitHub violet
@@ -186,6 +186,7 @@ class IslandStateManager: ObservableObject {
     @Published var currentEvent: IslandEvent?
     @Published var isHovered = false
     @Published var isThinking = false
+    @Published var thinkingSource: String?
 
     /// Live view of main + subagent channels, sorted with main first
     @Published var activeSessions: [SessionChannel] = []
@@ -295,8 +296,9 @@ class IslandStateManager: ObservableObject {
         }
     }
 
-    func startThinking() {
+    func startThinking(source: String? = nil) {
         DispatchQueue.main.async {
+            self.thinkingSource = source
             withAnimation(.easeInOut(duration: 0.6)) {
                 self.isThinking = true
             }
@@ -305,6 +307,8 @@ class IslandStateManager: ObservableObject {
 
     func stopThinking() {
         DispatchQueue.main.async {
+            // Keep thinkingSource so the fade-out renders with the same tint
+            // as the fade-in — next startThinking overwrites it.
             withAnimation(.easeInOut(duration: 0.8)) {
                 self.isThinking = false
             }

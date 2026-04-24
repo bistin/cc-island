@@ -283,7 +283,7 @@ class LocalServer {
 
         // Handle thinking state
         if type == "thinking_start" {
-            stateManager?.startThinking()
+            stateManager?.startThinking(source: json["source"] as? String)
             return
         } else if type == "thinking_stop" {
             stateManager?.stopThinking()

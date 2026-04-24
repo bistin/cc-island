@@ -26,6 +26,9 @@ struct IslandRootView: View {
         .onChange(of: stateManager.currentEvent?.id) { _ in
             updatePanelSize()
         }
+        .onChange(of: stateManager.isThinking) { _ in
+            updatePanelSize()
+        }
         .onHover { hovering in
             stateManager.isHovered = hovering
         }
@@ -35,11 +38,26 @@ struct IslandRootView: View {
         let rows = stateManager.activeSessions.count
         let detailLines = stateManager.currentEvent?.detail
             .map { min($0.split(separator: "\n").count, 10) } ?? 0
-        panel?.updateSize(to: stateManager.mode.size(
+        var size = stateManager.mode.size(
             hasNotch: hasNotch,
             sessionRows: rows,
             detailLines: detailLines
-        ))
+        )
+        // Compact with no thinking pulse has nothing to draw below the notch,
+        // so shrink the panel to match the ear/notch strip. Leaving the
+        // window tall catches clicks in the transparent region below the
+        // notch — `ignoresMouseEvents` is window-scoped so per-region
+        // click-through isn't possible without the frame itself shrinking.
+        if hasNotch && stateManager.mode == .compact && !stateManager.isThinking {
+            size.height = IslandPanel.notchHeight
+        }
+        // Capsule (no-notch) expanded action events need extra height for the
+        // Allow/Deny button row — the base 140pt only fits header + detail.
+        if !hasNotch && stateManager.mode == .expanded
+            && stateManager.currentEvent?.style == .action {
+            size.height += 48
+        }
+        panel?.updateSize(to: size)
     }
 
     // MARK: - Notch Layout (ears + expand below)
@@ -77,7 +95,7 @@ struct IslandRootView: View {
 
         // Thinking pulse — glow BELOW the notch so it's not hidden by hardware
         if stateManager.isThinking {
-            ThinkingPulseView()
+            ThinkingPulseView(source: stateManager.thinkingSource)
                 .allowsHitTesting(false)
                 .transition(.opacity)
         }
@@ -523,17 +541,63 @@ struct ExpandedPillView: View {
             }
 
             if let detail = event.detail {
-                Text(detail)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.8))
-                    .lineLimit(3)
-                    .padding(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+                DiffDetailView(text: detail)
+            }
+
+            if event.style == .action {
+                HStack(spacing: 12) {
+                    Button(action: {
+                        stateManager.server?.setResponse("allow")
+                        stateManager.dismiss()
+                    }) {
+                        Text("Allow")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color(red: 0.2, green: 0.5, blue: 1.0))
+                            )
+                    }
+                    .buttonStyle(.plain)
+
+                    Button(action: {
+                        stateManager.server?.setResponse("deny")
+                        stateManager.dismiss()
+                    }) {
+                        Text("Deny")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.8))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color.white.opacity(0.1))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if let progress = event.progress {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.white.opacity(0.1))
+                            .frame(height: 4)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(event.style.color)
+                            .frame(width: geo.size.width * progress, height: 4)
+                            .animation(.easeOut(duration: 0.25), value: progress)
+                    }
+                }
+                .frame(height: 4)
             }
         }
         .padding(16)
-        .frame(width: 380, height: 140)
+        .frame(width: 380)
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(
             RoundedRectangle(cornerRadius: 22)
                 .fill(.black)
@@ -547,17 +611,22 @@ struct ExpandedPillView: View {
 // MARK: - Thinking Pulse
 
 struct ThinkingPulseView: View {
+    let source: String?
     @State private var phase: CGFloat = 0
 
-    private let claudeColor = Color(red: 0.85, green: 0.65, blue: 0.45)
+    private static let fallbackColor = Color(red: 0.85, green: 0.65, blue: 0.45)
+
+    private var tint: Color {
+        source.flatMap { IslandEvent.sourceColor($0) } ?? Self.fallbackColor
+    }
 
     var body: some View {
         // Glow bar right below the notch
         RoundedRectangle(cornerRadius: 20)
-            .fill(claudeColor.opacity(0.4 * pulseValue))
+            .fill(tint.opacity(0.4 * pulseValue))
             .frame(width: IslandPanel.notchWidth - 20, height: 4)
-            .shadow(color: claudeColor.opacity(0.9 * pulseValue), radius: 14, y: 2)
-            .shadow(color: claudeColor.opacity(0.5 * pulseValue), radius: 6, y: 1)
+            .shadow(color: tint.opacity(0.9 * pulseValue), radius: 14, y: 2)
+            .shadow(color: tint.opacity(0.5 * pulseValue), radius: 6, y: 1)
         .onAppear {
             withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
                 phase = 1

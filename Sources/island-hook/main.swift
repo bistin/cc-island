@@ -141,7 +141,7 @@ case "PostCompact":
     send(buildPostCompactPayload(plan))
 
 case "UserPromptSubmit":
-    send(["type": "thinking_start"])
+    send(["type": "thinking_start", "source": plan.source])
 
 default: break
 }
