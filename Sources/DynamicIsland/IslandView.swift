@@ -43,12 +43,11 @@ struct IslandRootView: View {
             sessionRows: rows,
             detailLines: detailLines
         )
-        // Compact with no thinking pulse has nothing to draw below the notch,
-        // so shrink the panel to match the ear/notch strip. Leaving the
-        // window tall catches clicks in the transparent region below the
-        // notch — `ignoresMouseEvents` is window-scoped so per-region
-        // click-through isn't possible without the frame itself shrinking.
-        if hasNotch && stateManager.mode == .compact && !stateManager.isThinking {
+        // Compact mode has no content below the notch — the thinking pulse
+        // now lives in a separate click-through child window, so the main
+        // panel can shrink to the ear/notch strip and stop swallowing clicks
+        // meant for the app behind it.
+        if hasNotch && stateManager.mode == .compact {
             size.height = IslandPanel.notchHeight
         }
         // Capsule (no-notch) expanded action events need extra height for the
@@ -92,13 +91,6 @@ struct IslandRootView: View {
         .frame(height: IslandPanel.notchHeight)
         .animation(.spring(response: 0.45, dampingFraction: 0.78), value: isVisible)
         .clipped()
-
-        // Thinking pulse — glow BELOW the notch so it's not hidden by hardware
-        if stateManager.isThinking {
-            ThinkingPulseView(source: stateManager.thinkingSource)
-                .allowsHitTesting(false)
-                .transition(.opacity)
-        }
 
         // Expanded content below the notch
         if stateManager.mode == .expanded, let event {
@@ -609,6 +601,23 @@ struct ExpandedPillView: View {
 }
 
 // MARK: - Thinking Pulse
+
+/// Root content of the separate pulse child window. Renders the pulse only
+/// while `stateManager.isThinking` is true; the opacity transition matches
+/// the previous in-panel behavior.
+struct PulseRootView: View {
+    @ObservedObject var stateManager: IslandStateManager
+
+    var body: some View {
+        ZStack {
+            if stateManager.isThinking {
+                ThinkingPulseView(source: stateManager.thinkingSource)
+                    .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+}
 
 struct ThinkingPulseView: View {
     let source: String?

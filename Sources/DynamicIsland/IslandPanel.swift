@@ -5,6 +5,7 @@ import SwiftUI
 class IslandPanel: NSPanel {
     let stateManager: IslandStateManager
     private var cancellables: Set<AnyCancellable> = []
+    private var pulsePanel: PulseWindow?
 
     // Auto-detected from screen, with sensible fallbacks
     static var notchWidth: CGFloat = 185
@@ -97,6 +98,37 @@ class IslandPanel: NSPanel {
                 self?.ignoresMouseEvents = (mode == .hidden && event == nil)
             }
             .store(in: &cancellables)
+
+        // Thinking pulse lives in a separate transparent child window so the
+        // glow can spread below the notch without enlarging the main panel's
+        // hittable frame. `ignoresMouseEvents` is window-scoped, so sharing a
+        // frame with the ears would force clicks in the pulse strip to be
+        // blocked alongside clicks in the ears. Child window auto-follows the
+        // main panel on move; we still hide/show it based on isThinking.
+        let pulseSize = NSSize(width: Self.earWidth * 2 + Self.notchWidth, height: 30)
+        let pulse = PulseWindow(size: pulseSize)
+        let pulseHost = NSHostingView(rootView: PulseRootView(stateManager: stateManager))
+        pulseHost.layer?.backgroundColor = .clear
+        pulse.contentView = pulseHost
+        pulse.setFrame(NSRect(
+            x: rect.midX - pulseSize.width / 2,
+            y: rect.minY - pulseSize.height,
+            width: pulseSize.width,
+            height: pulseSize.height
+        ), display: false)
+        self.pulsePanel = pulse
+        self.addChildWindow(pulse, ordered: .above)
+
+        stateManager.$isThinking
+            .receive(on: DispatchQueue.main)
+            .sink { [weak pulse] thinking in
+                if thinking {
+                    pulse?.orderFrontRegardless()
+                } else {
+                    pulse?.orderOut(nil)
+                }
+            }
+            .store(in: &cancellables)
     }
 
     func show() {
@@ -141,7 +173,9 @@ class IslandPanel: NSPanel {
                 detailLines: self.stateManager.currentEvent?.detail
                     .map { min($0.split(separator: "\n").count, 10) } ?? 0
             )
-            self.setFrame(Self.topCenteredFrame(on: target, size: size), display: true)
+            let newFrame = Self.topCenteredFrame(on: target, size: size)
+            self.setFrame(newFrame, display: true)
+            self.syncPulsePanelFrame(mainFrame: newFrame)
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.2
                 self.animator().alphaValue = 1
@@ -182,5 +216,45 @@ class IslandPanel: NSPanel {
         } else {
             setFrame(newFrame, display: true)
         }
+        syncPulsePanelFrame(mainFrame: newFrame)
+    }
+
+    /// Re-anchor the pulse child window to just below the main panel. The
+    /// child-window relationship preserves relative offset on parent MOVE,
+    /// but parent RESIZE leaves the pulse at a stale y since the offset
+    /// between bottom edges changes with main height. Call this after every
+    /// main-panel frame change.
+    private func syncPulsePanelFrame(mainFrame: NSRect) {
+        guard let pulse = pulsePanel else { return }
+        let w = pulse.frame.width
+        let h = pulse.frame.height
+        pulse.setFrame(NSRect(
+            x: mainFrame.midX - w / 2,
+            y: mainFrame.minY - h,
+            width: w,
+            height: h
+        ), display: true)
+    }
+}
+
+/// Transparent child window housing the thinking pulse. Fully click-through
+/// (`ignoresMouseEvents = true`) so the glow strip below the notch never
+/// steals clicks from the app underneath. Main `IslandPanel` owns this as
+/// a child window so it follows on screen relocates.
+final class PulseWindow: NSPanel {
+    init(size: CGSize) {
+        super.init(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        self.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()) + 1)
+        self.isOpaque = false
+        self.backgroundColor = .clear
+        self.hasShadow = false
+        self.ignoresMouseEvents = true
+        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        self.hidesOnDeactivate = false
     }
 }
