@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-04-24
+
+### Added
+- **Multi-display support** — the Island follows the cursor across screens.
+  Triggers: `/event` POST (instant), 200 ms cursor dwell on a new screen,
+  or `didChangeScreenParametersNotification`. Relocation is a
+  fade-out → re-derive notch metrics → `setFrame` → fade-in (~0.35 s
+  total); mid-event state (permission dialogs, progress, reminders)
+  survives the move. Non-notch screens use the capsule layout. New
+  `ScreenFollower` (50 ms poll + 200 ms dwell), `IslandPanel.relocate(to:animated:)`,
+  and `NSScreen+Display` helpers. Single-screen setups are unaffected.
+  ([#12](https://github.com/bistin/cc-island/issues/12) / [#13](https://github.com/bistin/cc-island/pull/13), thanks @xero7689)
+- **`DynamicIslandCore` SPM library target** — pure-logic module
+  (Foundation-only) housing `ScreenResolver` and `HTTPParser` so the
+  app's non-AppKit pieces are unit-testable. Mirrors the existing
+  `IslandHookCore` pattern.
+- **20 new unit tests** — 5 × `ScreenResolverTests` (point-in-rect
+  lookup) + 15 × `HTTPParserTests` (split reads, framing errors,
+  duplicate / conflicting `Content-Length`, `Transfer-Encoding`
+  rejection, oversize). Total test count: **88**.
+
+### Fixed
+- **HTTP requests read across multiple TCP chunks.** `LocalServer`
+  previously called `connection.receive()` once per connection and
+  treated the bytes as one complete request. On loopback, `URLSession`
+  (used by the Swift `island-hook` binary) routinely delivers headers
+  and body in separate chunks — so the server returned 400 `missing_body`
+  and hook events silently dropped, at measured rates around 80% of
+  POSTs. `handleConnection` now loops until the full request is
+  buffered; parsing is extracted to `DynamicIslandCore.HTTPParser`.
+  Users should see many fewer "the notch didn't appear" moments.
+  ([#14](https://github.com/bistin/cc-island/issues/14) / [#15](https://github.com/bistin/cc-island/pull/15), thanks @xero7689)
+- Latent bug in `IslandPanel.updateSize(to:animated:)` — hard-coded to
+  `NSScreen.main`, which would misplace the panel on a secondary display
+  after a relocate. Now uses the panel's current screen.
+
+### Changed
+- HTTP framing hardened per RFC 7230 §3.3: duplicate / conflicting
+  `Content-Length` → 400 `malformed_request` (was: silent overwrite);
+  `Transfer-Encoding` (chunked decoder not implemented) → 400
+  `malformed_request` (was: accepted with ambiguous framing); declared
+  size over 1 MiB → 413 `payload_too_large` fail-fast (was: buffered
+  then cancelled).
+- `Info.plist` `CFBundleVersion` / `CFBundleShortVersionString` bumped
+  from `1.0.0` to `1.6.0`. Previous releases shipped with stale version
+  strings; now synced with the tag.
+
 ## [1.5.0] - 2026-04-22
 
 ### Added

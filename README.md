@@ -21,6 +21,7 @@
 - **Menu bar icon** — 從選單列直接 Quit / Reinstall Hooks，不用 `pkill`
 - **HTTP API** — `POST http://127.0.0.1:9423/event`，任何工具都能整合
 - **自動適配** — 有瀏海用耳朵模式，沒瀏海用膠囊模式
+- **多螢幕跟隨游標** — 游標切到另一個螢幕停留 200ms，Island 會淡出淡入搬過去；`/event` 進來時也會立刻跳到游標所在螢幕。每個螢幕重新判斷 notch / 膠囊排版
 
 ---
 
@@ -48,7 +49,7 @@ cd cc-island
 # Build (produces both DynamicIsland app and the hook binary)
 swift build -c release
 
-# Run unit tests (68 tests covering hook payload formatting)
+# Run unit tests (88 tests: hook payload formatting, HTTP parser, screen resolver)
 swift test
 
 # Assemble .app bundle
@@ -249,20 +250,26 @@ Sources/
 ├── DynamicIsland/                  # The app — AppKit + SwiftUI
 │   ├── App.swift                       # entry, CLI, NSAlert install prompt, menu bar
 │   ├── HookInstaller.swift             # auto-install hooks for Claude Code & Copilot
-│   ├── IslandPanel.swift               # NSPanel, auto-detect notch dimensions
+│   ├── IslandPanel.swift               # NSPanel, per-screen notch detection, relocate()
 │   ├── IslandState.swift               # state manager, immediate event display
 │   ├── IslandView.swift                # SwiftUI views (ears, thinking pulse, source stripe)
 │   ├── LocalServer.swift               # HTTP server (Network framework, port 9423)
-│   └── NotificationMonitor.swift       # macOS system notification listener
-├── IslandHookCore/                 # Pure-logic library (Foundation only, fully tested)
+│   ├── NotificationMonitor.swift       # macOS system notification listener
+│   ├── NSScreen+Display.swift          # displayID / containing(_:) helpers
+│   └── ScreenFollower.swift            # 50ms cursor poll + 200ms dwell debounce
+├── IslandHookCore/                 # Pure-logic hook library (Foundation only)
 │   ├── Format.swift                    # truncate, basename, diffLines, buildEditDiff
 │   ├── HookPlan.swift                  # parseHookPlan + extension methods
 │   └── PayloadBuilder.swift            # build{PreToolUse,PostToolUse,...}Payload
+├── DynamicIslandCore/              # Pure-logic app library (Foundation only)
+│   ├── HTTPParser.swift                # RFC 7230 request framing (duplicate CL / TE / oversize)
+│   └── ScreenResolver.swift            # point-in-rect screen lookup
 └── island-hook/                    # Tiny CLI binary deployed to ~/.claude/hooks/
     └── main.swift                      # I/O shell — reads stdin, dispatches via core, POSTs
 
 Tests/
-└── IslandHookCoreTests/            # 68 unit tests (`swift test`)
+├── IslandHookCoreTests/            # 68 tests — hook payload formatting
+└── DynamicIslandCoreTests/         # 20 tests — HTTPParser (15) + ScreenResolver (5)
 
 hooks/
 └── claude-settings-example.json    # Reference config for manual setup
