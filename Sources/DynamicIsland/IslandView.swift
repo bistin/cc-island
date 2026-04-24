@@ -38,24 +38,13 @@ struct IslandRootView: View {
         let rows = stateManager.activeSessions.count
         let detailLines = stateManager.currentEvent?.detail
             .map { min($0.split(separator: "\n").count, 10) } ?? 0
-        var size = stateManager.mode.size(
+        let size = IslandPanel.adjustedSize(
+            mode: stateManager.mode,
+            event: stateManager.currentEvent,
             hasNotch: hasNotch,
             sessionRows: rows,
             detailLines: detailLines
         )
-        // Compact mode has no content below the notch — the thinking pulse
-        // now lives in a separate click-through child window, so the main
-        // panel can shrink to the ear/notch strip and stop swallowing clicks
-        // meant for the app behind it.
-        if hasNotch && stateManager.mode == .compact {
-            size.height = IslandPanel.notchHeight
-        }
-        // Capsule (no-notch) expanded action events need extra height for the
-        // Allow/Deny button row — the base 140pt only fits header + detail.
-        if !hasNotch && stateManager.mode == .expanded
-            && stateManager.currentEvent?.style == .action {
-            size.height += 48
-        }
         panel?.updateSize(to: size)
     }
 

@@ -167,7 +167,9 @@ class IslandPanel: NSPanel {
             guard let self = self else { return }
             Self.applyScreenMetrics(target)
             let hasNotch = Self.detectHasNotch(for: target)
-            let size = self.stateManager.mode.size(
+            let size = Self.adjustedSize(
+                mode: self.stateManager.mode,
+                event: self.stateManager.currentEvent,
                 hasNotch: hasNotch,
                 sessionRows: self.stateManager.activeSessions.count,
                 detailLines: self.stateManager.currentEvent?.detail
@@ -189,6 +191,34 @@ class IslandPanel: NSPanel {
     func relocateToCursorScreen() {
         guard let target = NSScreen.containing(NSEvent.mouseLocation) ?? NSScreen.main else { return }
         relocate(to: target)
+    }
+
+    /// Post-processes the raw `IslandMode.size(...)` result for the two
+    /// cases that the enum doesn't know about:
+    ///   - notch compact/hidden: shrink to `notchHeight` — the pulse lives
+    ///     in its own window now, so the +30 pt strip just blocks clicks.
+    ///   - capsule expanded action: add 48 pt for the Allow/Deny button row.
+    /// Called from both `IslandRootView.updatePanelSize` and `relocate(to:)`
+    /// so every size computation stays in sync.
+    static func adjustedSize(
+        mode: IslandMode,
+        event: IslandEvent?,
+        hasNotch: Bool,
+        sessionRows: Int,
+        detailLines: Int
+    ) -> CGSize {
+        var size = mode.size(
+            hasNotch: hasNotch,
+            sessionRows: sessionRows,
+            detailLines: detailLines
+        )
+        if hasNotch && mode != .expanded {
+            size.height = notchHeight
+        }
+        if !hasNotch && mode == .expanded && event?.style == .action {
+            size.height += 48
+        }
+        return size
     }
 
     /// Top-centered frame on `screen`. Used by both `init` (via inline
