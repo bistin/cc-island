@@ -463,19 +463,17 @@ struct CompactPillView: View {
     @ObservedObject var stateManager: IslandStateManager
     @State private var appeared = false
 
-    /// Project prefix joined to subtitle so the pill shows which concurrent
-    /// session an event came from. The notch ear has an equivalent sublabel
-    /// via `event.project`; the capsule can't spare a second line so we
-    /// inline it.
-    private var secondaryLine: String {
-        let project = event.project ?? ""
-        switch (project.isEmpty, event.subtitle.isEmpty) {
-        case (true, true):   return ""
-        case (true, false):  return event.subtitle
-        case (false, true):  return project
-        case (false, false): return "\(project) · \(event.subtitle)"
-        }
+    /// Promote `event.project` to the primary title slot whenever we have
+    /// one — multi-session users read "which session" before "what action".
+    /// Falls back to `event.title` for bare `/event` POSTs with no project.
+    private var hasProject: Bool {
+        guard let project = event.project else { return false }
+        return !project.isEmpty && project != event.title
     }
+
+    private var primaryTitle: String { hasProject ? event.project! : event.title }
+
+    private var actionChipText: String? { hasProject ? event.title : nil }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -492,13 +490,26 @@ struct CompactPillView: View {
             }
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(event.title)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(primaryTitle)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
 
-                if !secondaryLine.isEmpty {
-                    Text(secondaryLine)
+                    if let chip = actionChipText {
+                        Text(chip)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(event.style.color)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(
+                                Capsule().fill(event.style.color.opacity(0.18))
+                            )
+                    }
+                }
+
+                if !event.subtitle.isEmpty {
+                    Text(event.subtitle)
                         .font(.system(size: 10, weight: .regular))
                         .foregroundColor(.white.opacity(0.6))
                         .lineLimit(1)
@@ -513,7 +524,7 @@ struct CompactPillView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
-        .frame(height: secondaryLine.isEmpty ? 38 : 44)
+        .frame(height: event.subtitle.isEmpty ? 38 : 44)
         .background(
             Capsule()
                 .fill(.black)
@@ -535,6 +546,13 @@ struct ExpandedPillView: View {
 
     private var isPulsing: Bool { event.style.isPulsing }
 
+    private var hasProject: Bool {
+        guard let project = event.project else { return false }
+        return !project.isEmpty && project != event.title
+    }
+
+    private var primaryTitle: String { hasProject ? event.project! : event.title }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
@@ -543,9 +561,23 @@ struct ExpandedPillView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(event.title)
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                    HStack(spacing: 6) {
+                        Text(primaryTitle)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+
+                        if hasProject {
+                            Text(event.title)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(event.style.color)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule().fill(event.style.color.opacity(0.18))
+                                )
+                        }
+                    }
+
                     if !event.subtitle.isEmpty {
                         Text(event.subtitle)
                             .font(.system(size: 12))
