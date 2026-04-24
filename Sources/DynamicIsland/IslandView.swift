@@ -464,26 +464,57 @@ struct CompactPillView: View {
     @ObservedObject var stateManager: IslandStateManager
     @State private var appeared = false
 
+    /// Project prefix joined to subtitle so the pill shows which concurrent
+    /// session an event came from. The notch ear has an equivalent sublabel
+    /// via `event.project`; the capsule can't spare a second line so we
+    /// inline it.
+    private var secondaryLine: String {
+        let project = event.project ?? ""
+        switch (project.isEmpty, event.subtitle.isEmpty) {
+        case (true, true):   return ""
+        case (true, false):  return event.subtitle
+        case (false, true):  return project
+        case (false, false): return "\(project) · \(event.subtitle)"
+        }
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            Text(event.icon)
-                .font(.system(size: 16))
-                .scaleEffect(appeared ? 1.0 : 0.5)
-                .animation(.spring(response: 0.3, dampingFraction: 0.6).delay(0.1), value: appeared)
+            // Source dot — the capsule's analogue to the ear's outer stripe.
+            Circle()
+                .fill(event.projectColor ?? event.style.color)
+                .frame(width: 6, height: 6)
 
-            Text(event.title)
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundColor(.white)
-                .lineLimit(1)
+            if !event.icon.isEmpty {
+                Text(event.icon)
+                    .font(.system(size: 15))
+                    .scaleEffect(appeared ? 1.0 : 0.5)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6).delay(0.1), value: appeared)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(event.title)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+
+                if !secondaryLine.isEmpty {
+                    Text(secondaryLine)
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundColor(.white.opacity(0.6))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
 
             if let progress = event.progress {
                 ProgressRing(progress: progress, color: event.style.color)
                     .frame(width: 18, height: 18)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .frame(height: 38)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .frame(height: secondaryLine.isEmpty ? 38 : 44)
         .background(
             Capsule()
                 .fill(.black)
@@ -532,7 +563,7 @@ struct ExpandedPillView: View {
             }
 
             if let detail = event.detail {
-                DiffDetailView(text: detail)
+                DiffDetailView(text: detail, scrollable: true)
             }
 
             if event.style == .action {
@@ -618,18 +649,47 @@ struct ThinkingPulseView: View {
 /// content renders as plain monospaced text.
 struct DiffDetailView: View {
     let text: String
+    /// When true, render all lines inside a vertical ScrollView capped at
+    /// `maxVisibleHeight`. Default false preserves the existing truncated
+    /// rendering used by the notch layout.
+    var scrollable: Bool = false
 
     private var lines: [Substring] { text.split(separator: "\n", omittingEmptySubsequences: false) }
 
+    private let maxVisibleHeight: CGFloat = 160
+
     var body: some View {
+        Group {
+            if scrollable {
+                ScrollView(.vertical, showsIndicators: true) {
+                    linesStack
+                        .padding(8)
+                }
+                .frame(maxHeight: maxVisibleHeight)
+            } else {
+                truncatedStack
+                    .padding(8)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white.opacity(0.08))
+        )
+    }
+
+    private var linesStack: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                lineText(line)
+            }
+        }
+    }
+
+    private var truncatedStack: some View {
         VStack(alignment: .leading, spacing: 1) {
             ForEach(Array(lines.prefix(10).enumerated()), id: \.offset) { _, line in
-                Text(line)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(color(for: line))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                lineText(line)
             }
             if lines.count > 10 {
                 Text("… +\(lines.count - 10) more")
@@ -637,12 +697,15 @@ struct DiffDetailView: View {
                     .foregroundColor(.white.opacity(0.4))
             }
         }
-        .padding(8)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.white.opacity(0.08))
-        )
+    }
+
+    private func lineText(_ line: Substring) -> some View {
+        Text(line)
+            .font(.system(size: 11, design: .monospaced))
+            .foregroundColor(color(for: line))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func color(for line: Substring) -> Color {
