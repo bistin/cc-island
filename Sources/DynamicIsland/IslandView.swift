@@ -387,7 +387,10 @@ struct ExpandedContentView: View {
             }
 
             if event.style == .action {
-                PermissionActionButtons(stateManager: stateManager)
+                PermissionActionButtons(
+                    stateManager: stateManager,
+                    suggestedRule: event.suggestedRule
+                )
             }
 
             if let progress = event.progress {
