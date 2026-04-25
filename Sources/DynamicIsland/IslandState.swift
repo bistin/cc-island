@@ -193,6 +193,11 @@ class IslandStateManager: ObservableObject {
     @Published var isThinking = false
     @Published var thinkingSource: String?
 
+    /// Whether the panel's current screen has a camera notch. Published so the
+    /// SwiftUI view tree re-renders when the panel relocates across screens
+    /// — `panel.screen` is a Cocoa property SwiftUI can't observe directly.
+    @Published var hasNotch: Bool = false
+
     /// Live view of main + subagent channels, sorted with main first
     @Published var activeSessions: [SessionChannel] = []
 

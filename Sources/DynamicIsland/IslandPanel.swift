@@ -82,6 +82,10 @@ class IslandPanel: NSPanel {
         self.ignoresMouseEvents = true
         self.acceptsMouseMovedEvents = true
 
+        // Seed the published flag so SwiftUI's initial layout knows which
+        // variant to render. Relocations update it in the completion handler.
+        stateManager.hasNotch = hasNotch
+
         let hostView = NSHostingView(
             rootView: IslandRootView(stateManager: stateManager, panel: self)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -163,6 +167,10 @@ class IslandPanel: NSPanel {
             guard let self = self else { return }
             Self.applyScreenMetrics(target)
             let hasNotch = Self.detectHasNotch(for: target)
+            // Publish the new layout kind so SwiftUI re-renders notch vs
+            // capsule. Must happen before setFrame so the view pass sees
+            // the right `hasNotch` against the new window geometry.
+            self.stateManager.hasNotch = hasNotch
             let size = Self.adjustedSize(
                 mode: self.stateManager.mode,
                 event: self.stateManager.currentEvent,
@@ -211,6 +219,33 @@ class IslandPanel: NSPanel {
             size.height = notchHeight
         }
         return size
+    }
+
+    /// Re-read the current screen's notch metrics and republish them to
+    /// `stateManager.hasNotch`, then resize the frame to match. Covers the
+    /// case where an external display is disconnected: Cocoa silently
+    /// reparents the window to a remaining screen, but `relocate(to:)`
+    /// short-circuits because `self.screen` already equals the target —
+    /// so `hasNotch` would stay stuck on the unplugged display's kind and
+    /// SwiftUI would keep rendering the wrong layout.
+    func refreshLayoutForCurrentScreen() {
+        guard let screen = self.screen ?? NSScreen.main else { return }
+        Self.applyScreenMetrics(screen)
+        let hasNotch = Self.detectHasNotch(for: screen)
+        stateManager.hasNotch = hasNotch
+        let detailLines = stateManager.currentEvent?.detail
+            .map { min($0.split(separator: "\n").count, 10) } ?? 0
+        let size = Self.adjustedSize(
+            mode: stateManager.mode,
+            event: stateManager.currentEvent,
+            hasNotch: hasNotch,
+            sessionRows: stateManager.activeSessions.count,
+            detailLines: detailLines
+        )
+        let newFrame = Self.topCenteredFrame(on: screen, size: size)
+        setFrame(newFrame, display: true)
+        syncPulsePanelFrame(mainFrame: newFrame)
+        updatePulseVisibility()
     }
 
     /// Top-centered frame on `screen`. Used by both `init` (via inline
