@@ -132,6 +132,29 @@ public func buildNotificationPayload(_ plan: HookPlan) -> [String: Any]? {
     ])
 }
 
+/// A rule string that approximates Claude Code's own "don't ask again"
+/// suggestion. The caller forwards this through the PermissionRequest
+/// payload so the UI can offer an "Always allow" button; when the user
+/// picks it, the hook emits `updatedPermissions` with `localSettings`
+/// destination matching Claude's built-in behaviour.
+///
+/// Heuristic, kept deliberately conservative:
+/// - Bash: first two space-separated tokens + ` *` (matches the
+///   "glab api *" / "git status *" style Claude shows in its own prompt).
+/// - Other tools: nil for now — pattern shape differs per tool
+///   (`Edit(**/*.swift)` etc.) and we'd rather not offer a wrong rule.
+public func suggestPermissionRule(toolName: String, toolInput: [String: Any]) -> (toolName: String, ruleContent: String)? {
+    switch toolName {
+    case "Bash":
+        let cmd = (toolInput["command"] as? String) ?? ""
+        let tokens = cmd.split(separator: " ").prefix(2).map(String.init)
+        guard !tokens.isEmpty else { return nil }
+        return (toolName: "Bash", ruleContent: tokens.joined(separator: " ") + " *")
+    default:
+        return nil
+    }
+}
+
 /// Build the PermissionRequest dialog payload. If cached PreToolUse input
 /// is provided and matches the tool, enriches the detail with a diff or
 /// content preview.
@@ -179,6 +202,16 @@ public func buildPermissionRequestPayload(
         "style": "action",
     ]
     if !diff.isEmpty { p["detail"] = diff }
+    // Suggest an "always allow" rule when we have enough signal. The UI
+    // uses this to offer a third button; when chosen, the hook echoes the
+    // pattern back to Claude Code via `updatedPermissions`.
+    let effectiveInput = (cachedToolName == toolName ? cachedInput : nil) ?? plan.toolInput
+    if let rule = suggestPermissionRule(toolName: toolName, toolInput: effectiveInput) {
+        p["suggested_rule"] = [
+            "toolName": rule.toolName,
+            "ruleContent": rule.ruleContent,
+        ]
+    }
     return plan.decorate(p)
 }
 

@@ -6,7 +6,7 @@ struct IslandRootView: View {
     @ObservedObject var stateManager: IslandStateManager
     weak var panel: IslandPanel?
 
-    private var hasNotch: Bool { panel?.hasNotch ?? false }
+    private var hasNotch: Bool { stateManager.hasNotch }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -93,21 +93,26 @@ struct IslandRootView: View {
 
     @ViewBuilder
     private var fallbackLayout: some View {
-        if stateManager.mode != .hidden, let event = stateManager.currentEvent {
-            Group {
-                switch stateManager.mode {
-                case .compact:
-                    CompactPillView(event: event, stateManager: stateManager)
-                        .transition(.scale(scale: 0.8).combined(with: .opacity))
-                case .expanded:
-                    ExpandedPillView(event: event, stateManager: stateManager)
-                        .transition(.scale(scale: 0.95).combined(with: .opacity))
-                default:
-                    EmptyView()
-                }
+        ZStack {
+            if let event = stateManager.currentEvent, stateManager.mode == .expanded {
+                ExpandedPillView(event: event, stateManager: stateManager)
+                    .transition(.scale(scale: 0.95).combined(with: .opacity))
+            } else if let event = stateManager.currentEvent, stateManager.mode == .compact {
+                CompactPillView(event: event, stateManager: stateManager)
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+            } else if stateManager.isThinking {
+                // Capsule equivalent of the notch's `PulseWindow`. Only shown
+                // when no event is in flight; an arriving event takes over
+                // the slot, the pill returns once the event dismisses if
+                // `isThinking` is still true.
+                ThinkingPillView(source: stateManager.thinkingSource)
+                    .transition(.scale(scale: 0.7).combined(with: .opacity))
             }
-            .padding(12)
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: stateManager.isThinking)
+        .animation(.spring(response: 0.45, dampingFraction: 0.78), value: stateManager.mode)
     }
 }
 
@@ -221,22 +226,22 @@ struct LeftEarView: View {
             }
 
             if isVisible, let event {
+                // EXPERIMENT: flip title/project on notch ear.
+                // Primary = project (when present), secondary = action.
+                // Source is already signalled by the outer edge stripe,
+                // so no separate dot inside the text.
+                let hasProject = (event.project?.isEmpty == false)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(event.title)
-                        .font(.system(size: event.project != nil ? 11 : 12, weight: isPulsing ? .semibold : .medium))
+                    Text(hasProject ? (event.project ?? "") : event.title)
+                        .font(.system(size: hasProject ? 11 : 12, weight: isPulsing ? .semibold : .medium))
                         .foregroundColor(isPulsing ? event.style.color : .white)
                         .lineLimit(1)
 
-                    if let project = event.project {
-                        HStack(spacing: 3) {
-                            Circle()
-                                .fill(event.projectColor ?? .white.opacity(0.4))
-                                .frame(width: 4, height: 4)
-                            Text(project)
-                                .font(.system(size: 8, weight: .regular))
-                                .foregroundColor(.white.opacity(0.4))
-                                .lineLimit(1)
-                        }
+                    if hasProject {
+                        Text(event.title)
+                            .font(.system(size: 8, weight: .regular))
+                            .foregroundColor(.white.opacity(0.5))
+                            .lineLimit(1)
                     }
                 }
                 .padding(.leading, 12)
@@ -418,19 +423,17 @@ struct CompactPillView: View {
     @ObservedObject var stateManager: IslandStateManager
     @State private var appeared = false
 
-    /// Project prefix joined to subtitle so the pill shows which concurrent
-    /// session an event came from. The notch ear has an equivalent sublabel
-    /// via `event.project`; the capsule can't spare a second line so we
-    /// inline it.
-    private var secondaryLine: String {
-        let project = event.project ?? ""
-        switch (project.isEmpty, event.subtitle.isEmpty) {
-        case (true, true):   return ""
-        case (true, false):  return event.subtitle
-        case (false, true):  return project
-        case (false, false): return "\(project) · \(event.subtitle)"
-        }
+    /// Promote `event.project` to the primary title slot whenever we have
+    /// one — multi-session users read "which session" before "what action".
+    /// Falls back to `event.title` for bare `/event` POSTs with no project.
+    private var hasProject: Bool {
+        guard let project = event.project else { return false }
+        return !project.isEmpty && project != event.title
     }
+
+    private var primaryTitle: String { hasProject ? event.project! : event.title }
+
+    private var actionChipText: String? { hasProject ? event.title : nil }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -447,13 +450,26 @@ struct CompactPillView: View {
             }
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(event.title)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(primaryTitle)
+                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
 
-                if !secondaryLine.isEmpty {
-                    Text(secondaryLine)
+                    if let chip = actionChipText {
+                        Text(chip)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(event.style.color)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(
+                                Capsule().fill(event.style.color.opacity(0.18))
+                            )
+                    }
+                }
+
+                if !event.subtitle.isEmpty {
+                    Text(event.subtitle)
                         .font(.system(size: 10, weight: .regular))
                         .foregroundColor(.white.opacity(0.6))
                         .lineLimit(1)
@@ -468,7 +484,7 @@ struct CompactPillView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
-        .frame(height: secondaryLine.isEmpty ? 38 : 44)
+        .frame(height: event.subtitle.isEmpty ? 38 : 44)
         .background(
             Capsule()
                 .fill(.black)
@@ -490,6 +506,13 @@ struct ExpandedPillView: View {
 
     private var isPulsing: Bool { event.style.isPulsing }
 
+    private var hasProject: Bool {
+        guard let project = event.project else { return false }
+        return !project.isEmpty && project != event.title
+    }
+
+    private var primaryTitle: String { hasProject ? event.project! : event.title }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
@@ -498,9 +521,23 @@ struct ExpandedPillView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(event.title)
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
+                    HStack(spacing: 6) {
+                        Text(primaryTitle)
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(.white)
+
+                        if hasProject {
+                            Text(event.title)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(event.style.color)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule().fill(event.style.color.opacity(0.18))
+                                )
+                        }
+                    }
+
                     if !event.subtitle.isEmpty {
                         Text(event.subtitle)
                             .font(.system(size: 12))
@@ -508,6 +545,9 @@ struct ExpandedPillView: View {
                     }
                 }
                 Spacer()
+                if stateManager.pendingActions.count > 0 {
+                    PendingActionDots(count: stateManager.pendingActions.count)
+                }
                 Button(action: { stateManager.dismiss() }) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16))
@@ -521,7 +561,10 @@ struct ExpandedPillView: View {
             }
 
             if event.style == .action {
-                PermissionActionButtons(stateManager: stateManager)
+                PermissionActionButtons(
+                    stateManager: stateManager,
+                    suggestedRule: event.suggestedRule
+                )
             }
 
             if let progress = event.progress {
@@ -615,6 +658,71 @@ struct ThinkingPulseView: View {
     private var pulseValue: CGFloat {
         // Smooth 0→1→0 breathing
         return 0.3 + 0.7 * phase
+    }
+}
+
+// MARK: - Thinking Pill (fallback / capsule mode)
+
+/// Three-dot breathing pill shown in fallback (non-notch) mode while the
+/// caller is thinking but no event is currently on screen. Source-tinted
+/// to match the active AI (Claude orange / Copilot violet / Codex green).
+///
+/// Notch mode uses `ThinkingPulseView` (a separate `PulseWindow`) for the
+/// same job — capsule users had no equivalent visual after v1.6.1 hid
+/// the pulse window in fallback mode, so they got zero feedback while
+/// the AI was reasoning between tool events. This pill closes that gap.
+///
+/// Animation driven by `TimelineView(.animation)` so each frame
+/// recomputes per-dot phase from wall-clock time. SwiftUI's implicit
+/// animation only evaluates `body` at state endpoints and would miss
+/// the triangle-wave peaks if we tried to derive phase from a `@State`
+/// bounced 0↔1.
+struct ThinkingPillView: View {
+    let source: String?
+
+    private static let fallbackColor = Color(red: 0.85, green: 0.65, blue: 0.45)
+    private static let dotCount = 3
+    private static let stagger: Double = 0.18  // seconds between dot peaks
+    private static let cycle: Double = 1.4     // full cycle duration
+    private let startDate = Date()
+
+    private var tint: Color {
+        source.flatMap { IslandEvent.sourceColor($0) } ?? Self.fallbackColor
+    }
+
+    var body: some View {
+        TimelineView(.animation) { context in
+            let elapsed = context.date.timeIntervalSince(startDate)
+            HStack(spacing: 6) {
+                ForEach(0..<Self.dotCount, id: \.self) { i in
+                    dot(for: i, elapsed: elapsed)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(width: 64, height: 26)
+            .background(
+                Capsule()
+                    .fill(Color.black)
+                    .overlay(Capsule().strokeBorder(tint.opacity(0.35), lineWidth: 1))
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func dot(for index: Int, elapsed: Double) -> some View {
+        let p = triangleWave(time: elapsed, delay: Double(index) * Self.stagger)
+        Circle()
+            .fill(tint)
+            .frame(width: 6, height: 6)
+            .opacity(0.3 + 0.7 * p)
+            .scaleEffect(0.9 + 0.2 * p)
+            .offset(y: -2 * p)
+    }
+
+    /// Triangle wave 0→1→0 over `cycle` seconds, offset by `delay`.
+    private func triangleWave(time: Double, delay: Double) -> Double {
+        let t = ((time + delay).truncatingRemainder(dividingBy: Self.cycle)) / Self.cycle
+        return t < 0.5 ? t * 2 : (1 - t) * 2
     }
 }
 
@@ -750,44 +858,105 @@ struct SessionRow: View {
     }
 }
 
+// MARK: - Pending Action Dots
+
+/// Hints that more `.action` events are queued behind the current one,
+/// without a numeric badge. Up to three dots.
+struct PendingActionDots: View {
+    let count: Int
+    @State private var pulse = false
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<min(count, 3), id: \.self) { _ in
+                Circle()
+                    .fill(Color.white.opacity(pulse ? 0.85 : 0.45))
+                    .frame(width: 4, height: 4)
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
+    }
+}
+
 // MARK: - Permission Action Buttons (shared by notch + capsule expanded)
 
 struct PermissionActionButtons: View {
     @ObservedObject var stateManager: IslandStateManager
+    let suggestedRule: PermissionRuleSuggestion?
 
     var body: some View {
-        HStack(spacing: 12) {
-            Button(action: {
-                stateManager.server?.setResponse("allow")
-                stateManager.dismiss()
-            }) {
-                Text("Allow")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(red: 0.2, green: 0.5, blue: 1.0))
-                    )
-            }
-            .buttonStyle(.plain)
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Button(action: {
+                    stateManager.server?.setResponse("allow")
+                    stateManager.dismiss()
+                }) {
+                    Text("Allow")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color(red: 0.2, green: 0.5, blue: 1.0))
+                        )
+                }
+                .buttonStyle(.plain)
 
-            Button(action: {
-                stateManager.server?.setResponse("deny")
-                stateManager.dismiss()
-            }) {
-                Text("Deny")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white.opacity(0.8))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color.white.opacity(0.1))
-                    )
+                Button(action: {
+                    stateManager.server?.setResponse("deny")
+                    stateManager.dismiss()
+                }) {
+                    Text("Deny")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.white.opacity(0.1))
+                        )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+
+            // "Always allow" — sends the rule back to Claude Code so the
+            // pattern lands in `localSettings.permissions.allow` and future
+            // matching invocations stop asking. Amber tint (not the Allow
+            // blue) signals "this is a persistent preference" rather than a
+            // primary yes/no action, and shrinks the tap target to reduce
+            // mis-taps on the adjacent Allow button.
+            if let rule = suggestedRule {
+                Button(action: {
+                    stateManager.server?.setResponse("allow", rule: rule)
+                    stateManager.dismiss()
+                }) {
+                    HStack(spacing: 8) {
+                        Spacer()
+                        Text("🔓").font(.system(size: 11))
+                        Text("Always allow")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(Color(red: 1.0, green: 0.75, blue: 0.4))
+                        Text(rule.ruleContent)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(Color(red: 1.0, green: 0.82, blue: 0.59).opacity(0.75))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer()
+                    }
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill(Color(red: 1.0, green: 0.67, blue: 0.24).opacity(0.14))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }

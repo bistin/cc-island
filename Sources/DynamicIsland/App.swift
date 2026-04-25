@@ -135,6 +135,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { [weak self] _ in
             self?.screenFollower.handleScreenTopologyChange()
+            // Cocoa auto-reparents orphaned windows, so `relocate(to:)` may
+            // see no work to do. Force-refresh the notch metrics anyway.
+            self?.panel?.refreshLayoutForCurrentScreen()
         }
 
         NotificationMonitor.shared.start(stateManager: stateManager)
