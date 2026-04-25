@@ -328,6 +328,63 @@ final class PayloadBuilderTests: XCTestCase {
         XCTAssertEqual(buildStopPayload(p)["title"] as? String, "Waiting")
     }
 
+    // MARK: - Stop with quick reply (issue #20 Phase 1)
+
+    /// xero7689's embedded-question case from #20: question precedes a
+    /// trailing statement. The pre-#20 narrow check (last 200 chars end
+    /// with `?`/`？`) missed this. `containsQuestion` catches it.
+    func testStop_embeddedQuestionThenStatement_emitsWaiting() {
+        let p = plan([
+            "hook_event_name": "Stop",
+            "last_assistant_message": "你覺得呢？如果不這樣做的話系統可能會有問題。",
+            "cwd": "/tmp",
+        ])
+        let body = buildStopPayload(p)
+        XCTAssertEqual(body["title"] as? String, "Waiting")
+        XCTAssertEqual(body["style"] as? String, "reminder")
+    }
+
+    func testStop_yesNoPattern_attachesQuickReplies() {
+        let p = plan([
+            "hook_event_name": "Stop",
+            "last_assistant_message": "Should I commit and push? yes/no",
+            "cwd": "/tmp",
+        ])
+        let body = buildStopPayload(p)
+        XCTAssertEqual(body["quick_replies"] as? [String], ["Yes", "No"])
+        // Persistent so it doesn't auto-dismiss while user decides.
+        XCTAssertEqual(body["persistent"] as? Bool, true)
+    }
+
+    func testStop_chineseYesNoPattern_attachesQuickReplies() {
+        let p = plan([
+            "hook_event_name": "Stop",
+            "last_assistant_message": "繼續執行嗎？是/否",
+            "cwd": "/tmp",
+        ])
+        XCTAssertEqual(buildStopPayload(p)["quick_replies"] as? [String], ["是", "否"])
+    }
+
+    func testStop_questionWithoutPattern_omitsQuickReplies() {
+        let p = plan([
+            "hook_event_name": "Stop",
+            "last_assistant_message": "Should I use option A or B?",
+            "cwd": "/tmp",
+        ])
+        let body = buildStopPayload(p)
+        XCTAssertEqual(body["title"] as? String, "Waiting")
+        XCTAssertNil(body["quick_replies"])
+    }
+
+    func testStop_declarative_omitsQuickReplies() {
+        let p = plan([
+            "hook_event_name": "Stop",
+            "last_assistant_message": "All checks passed.",
+            "cwd": "/tmp",
+        ])
+        XCTAssertNil(buildStopPayload(p)["quick_replies"])
+    }
+
     // MARK: - PermissionRequest with FIFO cache
 
     func testPermissionRequest_EnrichesWithCachedDiff() {

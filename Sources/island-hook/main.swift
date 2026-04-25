@@ -153,7 +153,18 @@ case "PermissionRequest":
 
 case "Stop":
     send(["type": "thinking_stop"])
-    send(buildStopPayload(plan))
+    let stopPayload = buildStopPayload(plan)
+    send(stopPayload)
+    // #20 Phase 1: when the payload offers quick-reply buttons, long-poll
+    // for the user's choice and emit `decision: block + reason: <label>`
+    // so Claude treats the label as the next instruction. Timeout drops
+    // back to Claude Code's default Stop behavior silently.
+    if stopPayload["quick_replies"] is [String] {
+        let decision = longPollResponse(timeoutSeconds: StopReplyTimeoutSeconds)
+        if decision.behavior != "timeout" && !decision.behavior.isEmpty {
+            print(encodeStopBlockResponse(reason: decision.behavior))
+        }
+    }
 
 case "StopFailure":
     send(["type": "thinking_stop"])

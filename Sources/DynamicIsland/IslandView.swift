@@ -383,7 +383,11 @@ struct ExpandedContentView: View {
             // Detail — renders as a colored diff when lines start with "+ " / "- ",
             // otherwise falls back to plain monospaced text
             if let detail = event.detail {
-                DiffDetailView(text: detail)
+                // Decision events (Allow/Deny or quick reply) need the full
+                // context to choose — let the detail scroll. Observational
+                // events keep notch's truncated default for visual density.
+                let needsFullContext = event.style == .action || event.quickReplies != nil
+                DiffDetailView(text: detail, scrollable: needsFullContext)
             }
 
             if event.style == .action {
@@ -391,6 +395,10 @@ struct ExpandedContentView: View {
                     stateManager: stateManager,
                     suggestedRule: event.suggestedRule
                 )
+            }
+
+            if let labels = event.quickReplies {
+                QuickReplyButtons(stateManager: stateManager, labels: labels)
             }
 
             if let progress = event.progress {
@@ -415,7 +423,13 @@ struct ExpandedContentView: View {
                 )
                 .shadow(color: event.style.glowColor, radius: 10, y: 4)
         )
-        .onTapGesture { stateManager.collapse() }
+        .onTapGesture {
+            // Don't collapse while the user is mid-decision: action events
+            // (Allow/Deny) and reminders with quick-reply buttons. Collapsing
+            // sets a 2 s dismiss timer that strands the long-polling hook.
+            if event.style == .action || event.quickReplies != nil { return }
+            stateManager.collapse()
+        }
     }
 }
 
@@ -570,6 +584,10 @@ struct ExpandedPillView: View {
                 )
             }
 
+            if let labels = event.quickReplies {
+                QuickReplyButtons(stateManager: stateManager, labels: labels)
+            }
+
             if let progress = event.progress {
                 LinearProgressBar(progress: progress, color: event.style.color)
             }
@@ -596,8 +614,10 @@ struct ExpandedPillView: View {
                 )
         )
         .onTapGesture {
-            // Don't collapse on action — the user must pick Allow or Deny.
-            if event.style == .action { return }
+            // Don't collapse while the user is mid-decision: action events
+            // (Allow/Deny) and reminders with quick-reply buttons. Collapsing
+            // sets a 2 s dismiss timer that strands the long-polling hook.
+            if event.style == .action || event.quickReplies != nil { return }
             stateManager.collapse()
         }
         .onAppear { updateActionPulse() }
@@ -957,6 +977,43 @@ struct PermissionActionButtons: View {
                         RoundedRectangle(cornerRadius: 9)
                             .fill(Color(red: 1.0, green: 0.67, blue: 0.24).opacity(0.14))
                     )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+// MARK: - Quick Reply Buttons (shared by notch + capsule expanded)
+
+/// Phase 1 of #20. Renders one button per `labels` entry; tap POSTs the
+/// label as the response body to the long-polling Stop hook, which then
+/// emits `decision:block + reason:<label>` to Claude. Layout and tinting
+/// mirror `PermissionActionButtons` so the two buttons rows feel
+/// consistent across action and reminder events.
+///
+/// Caller is expected to cap `labels` at 3 entries / 20 chars each
+/// (enforced server-side in `LocalServer.processEvent` already).
+struct QuickReplyButtons: View {
+    @ObservedObject var stateManager: IslandStateManager
+    let labels: [String]
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(labels, id: \.self) { label in
+                Button(action: {
+                    stateManager.server?.setResponse(label)
+                    stateManager.dismiss()
+                }) {
+                    Text(label)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white.opacity(0.95))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.white.opacity(0.12))
+                        )
                 }
                 .buttonStyle(.plain)
             }

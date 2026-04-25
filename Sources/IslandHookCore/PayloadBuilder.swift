@@ -217,8 +217,7 @@ public func buildPermissionRequestPayload(
 
 public func buildStopPayload(_ plan: HookPlan) -> [String: Any] {
     let lastMsg = (plan.payload["last_assistant_message"] as? String) ?? ""
-    let tail = String(lastMsg.suffix(200))
-    if tail.range(of: #"[?？]\s*$"#, options: .regularExpression) != nil {
+    if containsQuestion(lastMsg) {
         let question = extractLastQuestion(from: lastMsg)
         var p: [String: Any] = [
             "title": "Waiting",
@@ -226,6 +225,13 @@ public func buildStopPayload(_ plan: HookPlan) -> [String: Any] {
             "style": "reminder",
         ]
         if !lastMsg.isEmpty { p["detail"] = lastMsg }
+        // Phase 1 of #20: when we recognise a yes/no shape, surface
+        // quick-reply buttons. Reading the buttons in island-hook decides
+        // whether to long-poll for a reply and emit `decision:block`.
+        if let options = extractYesNoOptions(from: lastMsg) {
+            p["quick_replies"] = options
+            p["persistent"] = true
+        }
         return plan.decorate(p)
     } else {
         return plan.decorate([
