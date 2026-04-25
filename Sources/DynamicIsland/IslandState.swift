@@ -24,6 +24,13 @@ struct IslandEvent: Identifiable {
     let project: String?  // small project name label
     let source: String?   // "claude" / "copilot" / "codex" — drives color
     let suggestedRule: PermissionRuleSuggestion?
+    /// Phase 1 of #20 (Stop reply quick-reply buttons). Non-nil for Stop
+    /// events with a recognised yes/no shape — the strings render as
+    /// labelled buttons; tapping one POSTs to /response and the hook
+    /// emits `decision:block + reason:<label>`. Nil for events without a
+    /// known reply shape; Phase 2 will add a free-form text field for
+    /// those cases.
+    let quickReplies: [String]?
 
     /// Color signaling event source. Falls back to a deterministic
     /// project-name hash when the source isn't known, so legacy callers
@@ -68,7 +75,8 @@ struct IslandEvent: Identifiable {
         persistent: Bool = false,
         project: String? = nil,
         source: String? = nil,
-        suggestedRule: PermissionRuleSuggestion? = nil
+        suggestedRule: PermissionRuleSuggestion? = nil,
+        quickReplies: [String]? = nil
     ) {
         self.id = id
         self.icon = icon
@@ -82,6 +90,7 @@ struct IslandEvent: Identifiable {
         self.project = project
         self.source = source
         self.suggestedRule = suggestedRule
+        self.quickReplies = quickReplies
     }
 }
 
@@ -274,11 +283,20 @@ class IslandStateManager: ObservableObject {
                 return
             }
 
-            // Guard: while an action is awaiting a decision, don't overwrite
-            // it. Queue another action; drop transient events (a 30s-old
-            // "Reading" surfacing later would confuse more than help).
-            if self.currentEvent?.style == .action {
-                if event.style == .action {
+            // Guard: while the user is mid-decision, don't overwrite. Two
+            // shapes count as "mid-decision":
+            //   - .action with Allow/Deny (#28's PermissionRequest)
+            //   - .reminder with quick-reply buttons (#20 Phase 1 Stop reply)
+            // Both have a hook waiting on `/response`; clobbering the event
+            // strands the hook in a 25-30 s timeout. Queue another such
+            // event; drop transient pings.
+            let inDecision = self.currentEvent?.style == .action
+                || (self.currentEvent?.style == .reminder
+                    && self.currentEvent?.quickReplies != nil)
+            if inDecision {
+                let isDecisionEvent = event.style == .action
+                    || (event.style == .reminder && event.quickReplies != nil)
+                if isDecisionEvent {
                     self.pendingActions.append(event)
                 }
                 return
@@ -295,9 +313,13 @@ class IslandStateManager: ObservableObject {
         dismissTimer?.invalidate()
         isProcessing = true
 
+        // Action events and quick-reply reminders open expanded so the
+        // user can see the decision buttons immediately. Other events
+        // start compact and grow if the user clicks.
+        let needsExpanded = event.style == .action || event.quickReplies != nil
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
             currentEvent = event
-            mode = (event.style == .action) ? .expanded : .compact
+            mode = needsExpanded ? .expanded : .compact
         }
 
         if !event.persistent {

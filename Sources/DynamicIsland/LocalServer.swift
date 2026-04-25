@@ -363,6 +363,21 @@ class LocalServer {
             suggestedRule = PermissionRuleSuggestion(toolName: toolName, ruleContent: ruleContent)
         }
 
+        // #20 Phase 1: quick-reply button labels. Cap at 3 entries / 20
+        // chars per label so the button row fits whichever expanded view
+        // renders it (notch ~445 pt, capsule 420 pt). Non-string entries
+        // are dropped silently.
+        var quickReplies: [String]? = nil
+        if let raw = json["quick_replies"] as? [Any] {
+            let labels = raw
+                .compactMap { $0 as? String }
+                .map { String($0.prefix(20)) }
+                .prefix(3)
+            if !labels.isEmpty {
+                quickReplies = Array(labels)
+            }
+        }
+
         let event = IslandEvent(
             icon: icon,
             title: title,
@@ -374,7 +389,8 @@ class LocalServer {
             persistent: persistent,
             project: project,
             source: source,
-            suggestedRule: suggestedRule
+            suggestedRule: suggestedRule,
+            quickReplies: quickReplies
         )
 
         // Route into the session tree: main session when no agent_id, else
