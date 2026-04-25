@@ -93,21 +93,26 @@ struct IslandRootView: View {
 
     @ViewBuilder
     private var fallbackLayout: some View {
-        if stateManager.mode != .hidden, let event = stateManager.currentEvent {
-            Group {
-                switch stateManager.mode {
-                case .compact:
-                    CompactPillView(event: event, stateManager: stateManager)
-                        .transition(.scale(scale: 0.8).combined(with: .opacity))
-                case .expanded:
-                    ExpandedPillView(event: event, stateManager: stateManager)
-                        .transition(.scale(scale: 0.95).combined(with: .opacity))
-                default:
-                    EmptyView()
-                }
+        ZStack {
+            if let event = stateManager.currentEvent, stateManager.mode == .expanded {
+                ExpandedPillView(event: event, stateManager: stateManager)
+                    .transition(.scale(scale: 0.95).combined(with: .opacity))
+            } else if let event = stateManager.currentEvent, stateManager.mode == .compact {
+                CompactPillView(event: event, stateManager: stateManager)
+                    .transition(.scale(scale: 0.8).combined(with: .opacity))
+            } else if stateManager.isThinking {
+                // Capsule equivalent of the notch's `PulseWindow`. Only shown
+                // when no event is in flight; an arriving event takes over
+                // the slot, the pill returns once the event dismisses if
+                // `isThinking` is still true.
+                ThinkingPillView(source: stateManager.thinkingSource)
+                    .transition(.scale(scale: 0.7).combined(with: .opacity))
             }
-            .padding(12)
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: stateManager.isThinking)
+        .animation(.spring(response: 0.45, dampingFraction: 0.78), value: stateManager.mode)
     }
 }
 
@@ -660,6 +665,71 @@ struct ThinkingPulseView: View {
     private var pulseValue: CGFloat {
         // Smooth 0→1→0 breathing
         return 0.3 + 0.7 * phase
+    }
+}
+
+// MARK: - Thinking Pill (fallback / capsule mode)
+
+/// Three-dot breathing pill shown in fallback (non-notch) mode while the
+/// caller is thinking but no event is currently on screen. Source-tinted
+/// to match the active AI (Claude orange / Copilot violet / Codex green).
+///
+/// Notch mode uses `ThinkingPulseView` (a separate `PulseWindow`) for the
+/// same job — capsule users had no equivalent visual after v1.6.1 hid
+/// the pulse window in fallback mode, so they got zero feedback while
+/// the AI was reasoning between tool events. This pill closes that gap.
+///
+/// Animation driven by `TimelineView(.animation)` so each frame
+/// recomputes per-dot phase from wall-clock time. SwiftUI's implicit
+/// animation only evaluates `body` at state endpoints and would miss
+/// the triangle-wave peaks if we tried to derive phase from a `@State`
+/// bounced 0↔1.
+struct ThinkingPillView: View {
+    let source: String?
+
+    private static let fallbackColor = Color(red: 0.85, green: 0.65, blue: 0.45)
+    private static let dotCount = 3
+    private static let stagger: Double = 0.18  // seconds between dot peaks
+    private static let cycle: Double = 1.4     // full cycle duration
+    private let startDate = Date()
+
+    private var tint: Color {
+        source.flatMap { IslandEvent.sourceColor($0) } ?? Self.fallbackColor
+    }
+
+    var body: some View {
+        TimelineView(.animation) { context in
+            let elapsed = context.date.timeIntervalSince(startDate)
+            HStack(spacing: 6) {
+                ForEach(0..<Self.dotCount, id: \.self) { i in
+                    dot(for: i, elapsed: elapsed)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(width: 64, height: 26)
+            .background(
+                Capsule()
+                    .fill(Color.black)
+                    .overlay(Capsule().strokeBorder(tint.opacity(0.35), lineWidth: 1))
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func dot(for index: Int, elapsed: Double) -> some View {
+        let p = triangleWave(time: elapsed, delay: Double(index) * Self.stagger)
+        Circle()
+            .fill(tint)
+            .frame(width: 6, height: 6)
+            .opacity(0.3 + 0.7 * p)
+            .scaleEffect(0.9 + 0.2 * p)
+            .offset(y: -2 * p)
+    }
+
+    /// Triangle wave 0→1→0 over `cycle` seconds, offset by `delay`.
+    private func triangleWave(time: Double, delay: Double) -> Double {
+        let t = ((time + delay).truncatingRemainder(dividingBy: Self.cycle)) / Self.cycle
+        return t < 0.5 ? t * 2 : (1 - t) * 2
     }
 }
 
