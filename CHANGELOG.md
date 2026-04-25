@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] - 2026-04-25
+
+### Added
+- **Capsule thinking indicator** — fallback mode now gets its own
+  thinking visual: a 64 × 26 pt black `ThinkingPillView` with three
+  source-tinted dots (Claude orange / Copilot violet / Codex green)
+  animated on a 1.4 s cycle. Fills the gap left by v1.6.1's `PulseWindow`
+  rewrite, which hid the pulse outside notch mode. Yields its slot when
+  an event arrives and returns once the event dismisses if `isThinking`
+  is still true.
+  ([#26](https://github.com/bistin/cc-island/pull/26), thanks @xero7689)
+- **Project as primary identity** — both notch ears and capsule pill
+  lead with `event.project` when set; the action ("Reading" / "Permission")
+  demotes to a small style-tinted accent. Multi-session users read
+  "which session" before "what is it doing". Original layout preserved
+  when no project is provided.
+  ([#27](https://github.com/bistin/cc-island/pull/27), thanks @xero7689)
+- **"Always allow" with persistent rule** — Bash `PermissionRequest`
+  dialogs gain a third button mirroring Claude Code's "Yes, and don't
+  ask again for: <pattern>". `IslandHookCore.suggestPermissionRule`
+  derives a conservative pattern from `tool_input` (Bash only: first
+  two space-separated tokens + ` *`); decision flows back via
+  `updatedPermissions.addRules` scoped to
+  `.claude/settings.local.json`. Tools without a defined rule shape
+  show only Allow/Deny — a wrong rule is worse than no rule.
+  ([#28](https://github.com/bistin/cc-island/pull/28), thanks @xero7689)
+
+### Fixed
+- **Notch / capsule layout failed to re-render on screen change.**
+  `IslandRootView.hasNotch` was a plain computed property reading
+  `panel?.hasNotch` → `NSWindow.screen.safeAreaInsets`. `NSWindow.screen`
+  isn't observable by SwiftUI, so after `relocate(to:)` or a display
+  disconnect, the view tree had no signal to flip notch ↔ capsule.
+  Hoisted `hasNotch` to a `@Published` on `IslandStateManager`, seeded
+  in `IslandPanel.init`, republished from both `relocate(to:)` and
+  `didChangeScreenParametersNotification` on the same main-queue cycle
+  as the new frame.
+  ([#25](https://github.com/bistin/cc-island/pull/25), thanks @xero7689)
+- **Concurrent `PermissionRequest` events stopped overwriting each
+  other.** `pushEvent` previously replaced `currentEvent` unconditionally,
+  so a transient ping from session B could erase session A's pending
+  Allow/Deny — A's hook then timed out silently. `pushEvent` now guards
+  on `currentEvent?.style == .action`: another `.action` enqueues to
+  `pendingActions` (FIFO), transient events drop. `dismiss()` drains
+  the queue one at a time; `ExpandedPillView` shows a small `+N` capsule
+  next to the close button when the queue is non-empty.
+  ([#28](https://github.com/bistin/cc-island/pull/28), thanks @xero7689)
+
+### Changed
+- **Notch's `ExpandedContentView` adopts the shared
+  `PermissionActionButtons` / `LinearProgressBar`** introduced for the
+  capsule in v1.6.1 (#18). 47 lines of inline duplication collapse to
+  two lines; both layouts now route through the same three components
+  for action buttons, progress bar, and diff detail. No visible change.
+
 ## [1.6.1] - 2026-04-24
 
 ### Added
