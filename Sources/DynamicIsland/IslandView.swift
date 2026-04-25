@@ -383,7 +383,11 @@ struct ExpandedContentView: View {
             // Detail — renders as a colored diff when lines start with "+ " / "- ",
             // otherwise falls back to plain monospaced text
             if let detail = event.detail {
-                DiffDetailView(text: detail)
+                // Decision events (Allow/Deny or quick reply) need the full
+                // context to choose — let the detail scroll. Observational
+                // events keep notch's truncated default for visual density.
+                let needsFullContext = event.style == .action || event.quickReplies != nil
+                DiffDetailView(text: detail, scrollable: needsFullContext)
             }
 
             if event.style == .action {
