@@ -3,6 +3,14 @@ import SwiftUI
 
 // MARK: - Event Model
 
+/// Suggested permission rule forwarded from the PermissionRequest hook so the
+/// capsule can offer an "Always allow" button. Mirrors the shape Claude Code
+/// expects inside `updatedPermissions.rules[]`.
+struct PermissionRuleSuggestion: Equatable {
+    let toolName: String    // e.g. "Bash"
+    let ruleContent: String // e.g. "glab api *"
+}
+
 struct IslandEvent: Identifiable {
     let id: UUID
     let icon: String
@@ -15,6 +23,7 @@ struct IslandEvent: Identifiable {
     let persistent: Bool  // if true, won't auto-dismiss
     let project: String?  // small project name label
     let source: String?   // "claude" / "copilot" / "codex" — drives color
+    let suggestedRule: PermissionRuleSuggestion?
 
     /// Color signaling event source. Falls back to a deterministic
     /// project-name hash when the source isn't known, so legacy callers
@@ -58,7 +67,8 @@ struct IslandEvent: Identifiable {
         progress: Double? = nil,
         persistent: Bool = false,
         project: String? = nil,
-        source: String? = nil
+        source: String? = nil,
+        suggestedRule: PermissionRuleSuggestion? = nil
     ) {
         self.id = id
         self.icon = icon
@@ -71,6 +81,7 @@ struct IslandEvent: Identifiable {
         self.persistent = persistent
         self.project = project
         self.source = source
+        self.suggestedRule = suggestedRule
     }
 }
 
@@ -201,6 +212,12 @@ class IslandStateManager: ObservableObject {
     /// Live view of main + subagent channels, sorted with main first
     @Published var activeSessions: [SessionChannel] = []
 
+    /// Pending `.action` events queued behind the current one. A new `.action`
+    /// arriving while another is awaiting a decision would otherwise overwrite
+    /// the Allow/Deny UI and let the older hook's `/response` long-poll time
+    /// out silently. FIFO — drained one-at-a-time by `dismiss()`.
+    @Published private(set) var pendingActions: [IslandEvent] = []
+
     /// Reference to server for sending permission responses
     weak var server: LocalServer?
 
@@ -240,7 +257,9 @@ class IslandStateManager: ObservableObject {
                     detail: event.detail,
                     progress: event.progress,
                     persistent: event.persistent,
-                    project: event.project
+                    project: event.project,
+                    source: event.source,
+                    suggestedRule: event.suggestedRule
                 )
                 self.currentEvent = merged
                 if !event.persistent {
@@ -255,22 +274,37 @@ class IslandStateManager: ObservableObject {
                 return
             }
 
-            // Normal path: show the latest event immediately, replacing any queue
-            self.eventQueue.removeAll()
-            self.dismissTimer?.invalidate()
-            self.isProcessing = true
-
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                self.currentEvent = event
-                self.mode = (event.style == .action) ? .expanded : .compact
+            // Guard: while an action is awaiting a decision, don't overwrite
+            // it. Queue another action; drop transient events (a 30s-old
+            // "Reading" surfacing later would confuse more than help).
+            if self.currentEvent?.style == .action {
+                if event.style == .action {
+                    self.pendingActions.append(event)
+                }
+                return
             }
 
-            if !event.persistent {
-                self.dismissTimer = Timer.scheduledTimer(withTimeInterval: event.duration, repeats: false) { [weak self] _ in
-                    DispatchQueue.main.async {
-                        guard let self, !self.isHovered else { return }
-                        self.dismiss()
-                    }
+            self.showEvent(event)
+        }
+    }
+
+    /// Actually swap `currentEvent` and drive the dismiss timer. Assumes
+    /// caller has already cleared any action guard.
+    private func showEvent(_ event: IslandEvent) {
+        eventQueue.removeAll()
+        dismissTimer?.invalidate()
+        isProcessing = true
+
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+            currentEvent = event
+            mode = (event.style == .action) ? .expanded : .compact
+        }
+
+        if !event.persistent {
+            dismissTimer = Timer.scheduledTimer(withTimeInterval: event.duration, repeats: false) { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self, !self.isHovered else { return }
+                    self.dismiss()
                 }
             }
         }
@@ -299,6 +333,15 @@ class IslandStateManager: ObservableObject {
 
     func dismiss() {
         dismissTimer?.invalidate()
+
+        // Drain the queued-action backlog before hiding — the next pending
+        // action surfaces here rather than waiting for an external event.
+        if !pendingActions.isEmpty {
+            let next = pendingActions.removeFirst()
+            showEvent(next)
+            return
+        }
+
         isProcessing = false
         withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
             mode = .hidden

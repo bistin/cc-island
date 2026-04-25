@@ -38,17 +38,31 @@ func send(_ body: [String: Any]) {
     _ = sem.wait(timeout: .now() + 3)
 }
 
-func longPollResponse(timeoutSeconds: TimeInterval) -> String {
+struct PermissionDecision {
+    var behavior: String
+    var rule: (toolName: String, ruleContent: String)?
+}
+
+func longPollResponse(timeoutSeconds: TimeInterval) -> PermissionDecision {
     var req = URLRequest(url: responseURL)
     req.timeoutInterval = timeoutSeconds + 1
-    var decision = "timeout"
+    var decision = PermissionDecision(behavior: "timeout", rule: nil)
     let sem = DispatchSemaphore(value: 0)
     URLSession.shared.dataTask(with: req) { data, _, _ in
         defer { sem.signal() }
         guard let data = data,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let d = json["decision"] as? String else { return }
-        decision = d
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return }
+        // Backwards-compatible: older server versions returned
+        // `{"decision": "allow"}`. Newer ones return
+        // `{"behavior": "allow", "rule": {...}?}`.
+        let behavior = (json["behavior"] as? String) ?? (json["decision"] as? String) ?? "timeout"
+        decision.behavior = behavior
+        if let rule = json["rule"] as? [String: Any],
+           let toolName = rule["toolName"] as? String,
+           let ruleContent = rule["ruleContent"] as? String {
+            decision.rule = (toolName: toolName, ruleContent: ruleContent)
+        }
     }.resume()
     _ = sem.wait(timeout: .now() + timeoutSeconds + 2)
     return decision
@@ -100,9 +114,37 @@ case "PermissionRequest":
     )
     send(body)
 
-    switch longPollResponse(timeoutSeconds: 25) {
+    let decision = longPollResponse(timeoutSeconds: 25)
+    switch decision.behavior {
     case "allow":
-        print(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#)
+        if let rule = decision.rule {
+            // Claude Code persists the pattern to localSettings (project scope)
+            // — matches the "Yes, and don't ask again for: <pattern>" option
+            // from its own interactive prompt.
+            let payload: [String: Any] = [
+                "hookSpecificOutput": [
+                    "hookEventName": "PermissionRequest",
+                    "decision": [
+                        "behavior": "allow",
+                        "updatedPermissions": [[
+                            "type": "addRules",
+                            "rules": [[
+                                "toolName": rule.toolName,
+                                "ruleContent": rule.ruleContent,
+                            ]],
+                            "behavior": "allow",
+                            "destination": "localSettings",
+                        ] as [String: Any]],
+                    ] as [String: Any],
+                ],
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
+               let jsonString = String(data: data, encoding: .utf8) {
+                print(jsonString)
+            }
+        } else {
+            print(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#)
+        }
     case "deny":
         print(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Denied from Dynamic Island"}}}"#)
     default: break
