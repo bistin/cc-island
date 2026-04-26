@@ -162,6 +162,11 @@ enum HookInstaller {
         }
     }
 
+    static func hasExistingInstall(target: Target) -> Bool {
+        anyOurEntryExists(target: target)
+            || FileManager.default.fileExists(atPath: target.deployedHookURL.path)
+    }
+
     // MARK: - Source resolution
 
     /// Locates the bundled `island-hook` binary that we deploy into the user's
