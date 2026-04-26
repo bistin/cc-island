@@ -7,7 +7,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "DynamicIsland",
-            dependencies: ["DynamicIslandCore"],
+            dependencies: ["DynamicIslandCore", "IslandHookCore"],
             path: "Sources/DynamicIsland"
         ),
         // Pure, platform-agnostic helpers extracted from the app so they

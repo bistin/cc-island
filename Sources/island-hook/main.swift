@@ -14,6 +14,11 @@ let port = ProcessInfo.processInfo.environment["DYNAMIC_ISLAND_PORT"]
 let eventURL = URL(string: "http://127.0.0.1:\(port)/event")!
 let responseURL = URL(string: "http://127.0.0.1:\(port)/response")!
 
+/// One UUID per hook invocation — the IslandEvent it produces and any
+/// subsequent `/response` poll share it so a late click from a previous
+/// event can't get harvested by this hook (issue #31).
+let eventID = UUID().uuidString.lowercased()
+
 // MARK: - Parse stdin
 
 let inputData = FileHandle.standardInput.readDataToEndOfFile()
@@ -26,7 +31,9 @@ else { exit(0) }
 // MARK: - I/O helpers
 
 func send(_ body: [String: Any]) {
-    guard let data = try? JSONSerialization.data(withJSONObject: body) else { return }
+    var enriched = body
+    enriched["event_id"] = eventID
+    guard let data = try? JSONSerialization.data(withJSONObject: enriched) else { return }
     var req = URLRequest(url: eventURL)
     req.httpMethod = "POST"
     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -44,7 +51,11 @@ struct PermissionDecision {
 }
 
 func longPollResponse(timeoutSeconds: TimeInterval) -> PermissionDecision {
-    var req = URLRequest(url: responseURL)
+    // Scope the poll to this hook's event so a parked decision from an
+    // earlier (timed-out) event can't satisfy us — see issue #31.
+    var components = URLComponents(url: responseURL, resolvingAgainstBaseURL: false)!
+    components.queryItems = [URLQueryItem(name: "event_id", value: eventID)]
+    var req = URLRequest(url: components.url!)
     req.timeoutInterval = timeoutSeconds + 1
     var decision = PermissionDecision(behavior: "timeout", rule: nil)
     let sem = DispatchSemaphore(value: 0)

@@ -393,12 +393,13 @@ struct ExpandedContentView: View {
             if event.style == .action {
                 PermissionActionButtons(
                     stateManager: stateManager,
-                    suggestedRule: event.suggestedRule
+                    suggestedRule: event.suggestedRule,
+                    eventID: event.id
                 )
             }
 
             if let labels = event.quickReplies {
-                QuickReplyButtons(stateManager: stateManager, labels: labels)
+                QuickReplyButtons(stateManager: stateManager, labels: labels, eventID: event.id)
             }
 
             if let progress = event.progress {
@@ -580,12 +581,13 @@ struct ExpandedPillView: View {
             if event.style == .action {
                 PermissionActionButtons(
                     stateManager: stateManager,
-                    suggestedRule: event.suggestedRule
+                    suggestedRule: event.suggestedRule,
+                    eventID: event.id
                 )
             }
 
             if let labels = event.quickReplies {
-                QuickReplyButtons(stateManager: stateManager, labels: labels)
+                QuickReplyButtons(stateManager: stateManager, labels: labels, eventID: event.id)
             }
 
             if let progress = event.progress {
@@ -910,12 +912,15 @@ struct PendingActionDots: View {
 struct PermissionActionButtons: View {
     @ObservedObject var stateManager: IslandStateManager
     let suggestedRule: PermissionRuleSuggestion?
+    let eventID: UUID
+
+    private var expired: Bool { stateManager.currentEventExpired }
 
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
                 Button(action: {
-                    stateManager.server?.setResponse("allow")
+                    stateManager.server?.setResponse("allow", eventID: eventID)
                     stateManager.dismiss()
                 }) {
                     Text("Allow")
@@ -929,9 +934,10 @@ struct PermissionActionButtons: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .disabled(expired)
 
                 Button(action: {
-                    stateManager.server?.setResponse("deny")
+                    stateManager.server?.setResponse("deny", eventID: eventID)
                     stateManager.dismiss()
                 }) {
                     Text("Deny")
@@ -945,7 +951,9 @@ struct PermissionActionButtons: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .disabled(expired)
             }
+            .opacity(expired ? 0.5 : 1)
 
             // "Always allow" — sends the rule back to Claude Code so the
             // pattern lands in `localSettings.permissions.allow` and future
@@ -955,7 +963,7 @@ struct PermissionActionButtons: View {
             // mis-taps on the adjacent Allow button.
             if let rule = suggestedRule {
                 Button(action: {
-                    stateManager.server?.setResponse("allow", rule: rule)
+                    stateManager.server?.setResponse("allow", rule: rule, eventID: eventID)
                     stateManager.dismiss()
                 }) {
                     HStack(spacing: 8) {
@@ -979,6 +987,15 @@ struct PermissionActionButtons: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .disabled(expired)
+                .opacity(expired ? 0.5 : 1)
+            }
+
+            if expired {
+                Text("Reply window expired — dismiss and re-trigger to respond.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.55))
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
         }
     }
@@ -997,25 +1014,38 @@ struct PermissionActionButtons: View {
 struct QuickReplyButtons: View {
     @ObservedObject var stateManager: IslandStateManager
     let labels: [String]
+    let eventID: UUID
+
+    private var expired: Bool { stateManager.currentEventExpired }
 
     var body: some View {
-        HStack(spacing: 12) {
-            ForEach(labels, id: \.self) { label in
-                Button(action: {
-                    stateManager.server?.setResponse(label)
-                    stateManager.dismiss()
-                }) {
-                    Text(label)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white.opacity(0.95))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.white.opacity(0.12))
-                        )
+        VStack(spacing: 6) {
+            HStack(spacing: 12) {
+                ForEach(labels, id: \.self) { label in
+                    Button(action: {
+                        stateManager.server?.setResponse(label, eventID: eventID)
+                        stateManager.dismiss()
+                    }) {
+                        Text(label)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.95))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color.white.opacity(0.12))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(expired)
                 }
-                .buttonStyle(.plain)
+            }
+            .opacity(expired ? 0.5 : 1)
+
+            if expired {
+                Text("Reply window expired — dismiss and re-trigger to respond.")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.55))
             }
         }
     }

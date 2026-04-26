@@ -136,6 +136,12 @@ extension HookPlan {
         if let id = agentId, !id.isEmpty { p["agent_id"] = id }
         if let t = agentType, !t.isEmpty { p["agent_type"] = t }
         if !source.isEmpty { p["source"] = source }
+        // Forward Claude Code's session UUID so the island can tell two
+        // main sessions in the same project apart — needed for the
+        // "user resolved on the terminal side" detection (#31 follow-up).
+        if let sid = payload["session_id"] as? String, !sid.isEmpty {
+            p["session_id"] = sid
+        }
         return p
     }
 
