@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.3] - 2026-04-26
+
+### Added
+- **Quick-reply buttons for yes/no Stop events** — when a Stop hook
+  ends with a yes/no shaped question, the island offers tap-to-reply
+  buttons; tap flows back as `decision:block + reason:<label>` so
+  Claude takes the label as next instruction. Recognises `yes/no`,
+  `y/n` (any case, half/full-width slash), `是/否`. Free-form text
+  replies deferred to Phase 2.
+  ([#29](https://github.com/bistin/cc-island/pull/29), Phase 1 of
+  [#20](https://github.com/bistin/cc-island/issues/20); thanks
+  @xero7689 for the scope review)
+
+### Fixed
+- **Late `/response` clicks no longer leak across unrelated events.**
+  `setResponse` previously parked the value without scoping; the next
+  `/response` poll consumed it regardless of which event originally
+  triggered the poll, so a click after the originating hook's long-poll
+  timed out could silently approve an unrelated subsequent event. Each
+  hook now attaches a UUID to its `/event` POST and uses the same id
+  when polling `/response`; the server matches by id. UX side: when
+  the hook's long-poll horizon (25 s for `PermissionRequest`, 30 s for
+  Stop quick reply) passes, the buttons disable + a "Reply window
+  expired" hint surfaces, then the pill auto-dismisses 5 s later so
+  the slot doesn't stay locked. A same-session non-decision event
+  from the same Claude session also releases the lock — the user
+  answered on the terminal side, the island moves on.
+  ([#32](https://github.com/bistin/cc-island/pull/32), thanks
+  @xero7689; closes
+  [#31](https://github.com/bistin/cc-island/issues/31))
+
 ## [1.6.2] - 2026-04-25
 
 ### Added
