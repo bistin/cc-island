@@ -429,6 +429,16 @@ final class PayloadBuilderTests: XCTestCase {
         XCTAssertNil(body["detail"])
     }
 
+    func testPermissionRequest_CodexDoesNotSuggestPersistentRule() {
+        let p = plan([
+            "hook_event_name": "PermissionRequest", "tool_name": "Bash",
+            "tool_input": ["command": "gh issue list --state open"],
+            "cwd": "/tmp",
+        ], env: ["ISLAND_SOURCE": "codex"])
+        let body = buildPermissionRequestPayload(p)
+        XCTAssertNil(body["suggested_rule"])
+    }
+
     // MARK: - Session lifecycle
 
     func testSessionStart_usesSourceField() {

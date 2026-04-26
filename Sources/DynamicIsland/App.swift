@@ -173,6 +173,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             title: "Reinstall Claude Code Hooks",
             action: #selector(reinstallHooks),
             keyEquivalent: ""))
+        menu.addItem(NSMenuItem(
+            title: "Reinstall Codex Hooks",
+            action: #selector(reinstallCodexHooks),
+            keyEquivalent: ""))
         menu.addItem(.separator())
         let quit = NSMenuItem(
             title: "Quit Dynamic Island",
@@ -211,10 +215,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func reinstallHooks() {
         let result = HookInstaller.install(target: .claudeCode)
-        reportInstallResult(result)
+        reportInstallResult(result, target: .claudeCode)
         if case .installed = result {
             UserDefaults.standard.set("installed", forKey: Self.hookChoiceKey)
         }
+    }
+
+    @objc private func reinstallCodexHooks() {
+        let result = HookInstaller.install(target: .codex)
+        reportInstallResult(result, target: .codex)
     }
 
     private func maybePromptForHookInstall() {
@@ -225,6 +234,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             break
         default:
             showInstallPrompt()
+        }
+
+        // Codex hooks are installed explicitly via CLI/menu, but once present
+        // they need the same binary drift repair as Claude hooks after app
+        // upgrades.
+        if HookInstaller.hasExistingInstall(target: .codex) {
+            _ = HookInstaller.syncIfOutdated(target: .codex)
         }
     }
 
@@ -253,7 +269,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         case .alertFirstButtonReturn:   // Install
             let result = HookInstaller.install(target: .claudeCode)
             UserDefaults.standard.set("installed", forKey: Self.hookChoiceKey)
-            reportInstallResult(result)
+            reportInstallResult(result, target: .claudeCode)
         case .alertThirdButtonReturn:   // Never
             UserDefaults.standard.set("declined", forKey: Self.hookChoiceKey)
         default:                        // Skip — ask again next launch
@@ -261,12 +277,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func reportInstallResult(_ result: HookInstaller.Result) {
+    private func reportInstallResult(_ result: HookInstaller.Result, target: HookInstaller.Target) {
         switch result {
         case .installed:
             stateManager.pushEvent(IslandEvent(
-                title: "Hooks installed",
-                subtitle: "~/.claude/hooks/dynamic-island-hook",
+                title: "\(target.displayName) hooks installed",
+                subtitle: target.deployedHookURL.path,
                 style: .success,
                 duration: 4.0
             ))

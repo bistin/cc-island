@@ -206,7 +206,8 @@ public func buildPermissionRequestPayload(
     // uses this to offer a third button; when chosen, the hook echoes the
     // pattern back to Claude Code via `updatedPermissions`.
     let effectiveInput = (cachedToolName == toolName ? cachedInput : nil) ?? plan.toolInput
-    if let rule = suggestPermissionRule(toolName: toolName, toolInput: effectiveInput) {
+    if plan.source == "claude",
+       let rule = suggestPermissionRule(toolName: toolName, toolInput: effectiveInput) {
         p["suggested_rule"] = [
             "toolName": rule.toolName,
             "ruleContent": rule.ruleContent,
