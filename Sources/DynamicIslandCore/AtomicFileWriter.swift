@@ -106,6 +106,8 @@ public struct AtomicFileWriter {
     }
 
     private static func bestEffortSyncDirectory(at url: URL) {
+        // APFS/HFS+ directory fsync semantics are weaker than Linux's; this is
+        // still useful as a best-effort flush of the rename's directory entry.
         let fd = Darwin.open(url.path, O_RDONLY)
         guard fd >= 0 else { return }
         _ = Darwin.fsync(fd)

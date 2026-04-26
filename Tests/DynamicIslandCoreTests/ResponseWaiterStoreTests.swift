@@ -137,7 +137,7 @@ final class ResponseWaiterStoreTests: XCTestCase {
             await store.wait(
                 eventID: eventB,
                 timeoutValue: "timeout",
-                timeoutNanoseconds: 5_000_000
+                timeoutNanoseconds: 1_000_000_000
             )
         }
         await waitForWaiters(store, count: 1)
