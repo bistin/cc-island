@@ -245,6 +245,32 @@ DynamicIsland --uninstall-codex-hooks
 DynamicIsland --help
 ```
 
+---
+
+## Roadmap / Backlog
+
+目前優先順序大致分三組，先列成文字方便後續拆 issue / PR。
+
+### Reliability / Bugs
+
+1. Verify `/response` timeout cleanup after #32 — eventID scoping 已擋住 late-click cross-event leak；還要 audit timeout path 是否會留下 stale waiter，並補 race / timeout 測試。
+2. Harden local `/event` and `/response` API — 加 per-launch token 給 hooks 帶 header/env，並移除或限制 `Access-Control-Allow-Origin: *`。
+3. Move PreToolUse cache out of predictable `/tmp` path — 現在是 `/tmp/di_pretool_${PROJECT}.json`；共用機器上其他 user / process 可預測 path，應改到 `~/Library/Caches/cc-island/`，用 `session_id` 或 project/session hash key。
+4. Make hook/settings writes atomic — config 寫入改 temp file + replace，必要時保留 `.bak`，避免寫壞 Claude / Codex / Copilot 設定。
+
+### Refactor
+
+5. Split `IslandView.swift` into smaller view files — 先拆 `NotchView` / `CapsuleView` / `DetailViews` / `ActionControls`，並把非 rendering logic 移出 view，對齊 view testability 的方向。
+6. Extract testable event/state logic — `LocalServer` 專心做 HTTP framing/router，JSON → `IslandEvent` 轉換搬到 decoder；view 互動/queue 判斷則往 state manager 或 pure helper 收斂，方便 unit test。
+7. Tighten hook ownership detection — `HookInstaller.isOurs` 避免用寬鬆 marker，改用精確 deployed path / 已知 legacy path。
+
+### Features
+
+8. Inline text reply for Stop events (#20 Phase 2) — 不開新 issue，延續 #20；沒有 quick replies 的問題可直接在 island 輸入短回覆。
+9. Diagnostics menu/pane — 顯示 server port、hooks 是否 installed/current、deployed hook hash、最近 events。
+10. Built-in self-test actions — menu 提供 `Send Test Event` / `Test Permission Flow` / `Test Codex Hook`。
+11. User settings — 可調 Stop reply timeout、screen follower dwell、source colors、各 provider hook sync 行為。
+
 ## Architecture
 
 ```
