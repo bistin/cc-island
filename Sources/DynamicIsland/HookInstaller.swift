@@ -1,3 +1,4 @@
+import DynamicIslandCore
 import Foundation
 
 /// Deploys the bundled `island-hook` binary and registers hook events for
@@ -196,14 +197,13 @@ enum HookInstaller {
     }
 
     private static func deployHookScript(from source: URL, to dest: URL) throws {
-        let dir = dest.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        if FileManager.default.fileExists(atPath: dest.path) {
-            try FileManager.default.removeItem(at: dest)
-        }
-        try FileManager.default.copyItem(at: source, to: dest)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755], ofItemAtPath: dest.path)
+        let data = try Data(contentsOf: source)
+        try AtomicFileWriter.write(
+            data,
+            to: dest,
+            backupExisting: false,
+            posixPermissions: 0o755
+        )
     }
 
     // MARK: - Settings manipulation
@@ -312,12 +312,18 @@ enum HookInstaller {
     /// proceed if the existing file is unreadable JSON.
     private static func writeSettings(target: Target, shouldHaveHooks: Bool) throws {
         let url = target.settingsURL
+        let fingerprint = try AtomicFileWriter.fingerprint(at: url)
         var root: [String: Any] = [:]
-        if let data = try? Data(contentsOf: url), !data.isEmpty {
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                throw SettingsParseError(path: url.path)
+        if fingerprint.exists {
+            let data = try Data(contentsOf: url)
+            if data.isEmpty {
+                root = [:]
+            } else {
+                guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    throw SettingsParseError(path: url.path)
+                }
+                root = json
             }
-            root = json
         }
         var hooks = root["hooks"] as? [String: Any] ?? [:]
 
@@ -354,12 +360,9 @@ enum HookInstaller {
             root["version"] = 1
         }
 
-        let parent = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
-
         let data = try JSONSerialization.data(
             withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: url)
+        try AtomicFileWriter.write(data, to: url, expectedFingerprint: fingerprint)
     }
 
     private static func newEntry(
@@ -408,12 +411,20 @@ enum HookInstaller {
 
     private static func ensureCodexHooksFeatureEnabled() throws {
         guard let url = Target.codex.codexConfigURL else { return }
-        let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let fingerprint = try AtomicFileWriter.fingerprint(at: url)
+        let existing: String
+        if fingerprint.exists {
+            existing = try String(contentsOf: url, encoding: .utf8)
+        } else {
+            existing = ""
+        }
         let updated = setTomlBool(true, for: "codex_hooks", inSection: "features", content: existing)
 
-        let parent = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
-        try updated.write(to: url, atomically: true, encoding: .utf8)
+        try AtomicFileWriter.write(
+            Data(updated.utf8),
+            to: url,
+            expectedFingerprint: fingerprint
+        )
     }
 
     private static func tomlBoolValue(
