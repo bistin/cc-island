@@ -240,6 +240,9 @@ TextField with no hook waiting.
 
 ## Acceptance
 
+- [ ] **Delete `inline-reply-phase2-plan.md` from the repo** in the
+  implementation PR — this doc is WIP scaffolding only and should
+  not land on `main`.
 - [ ] `swift build` clean
 - [ ] `swift test`: existing baseline + 4 new (3 PayloadBuilder + 1
   HookPlan) all green. Don't compare to a fixed total — the
