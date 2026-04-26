@@ -7,7 +7,7 @@ import IslandHookCore
 /// Suggested permission rule forwarded from the PermissionRequest hook so the
 /// capsule can offer an "Always allow" button. Mirrors the shape Claude Code
 /// expects inside `updatedPermissions.rules[]`.
-struct PermissionRuleSuggestion: Equatable {
+struct PermissionRuleSuggestion: Equatable, Sendable {
     let toolName: String    // e.g. "Bash"
     let ruleContent: String // e.g. "glab api *"
 }

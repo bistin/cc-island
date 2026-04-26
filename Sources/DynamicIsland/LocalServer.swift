@@ -21,7 +21,7 @@ import DynamicIslandCore
 /// `rule` is non-nil only when the user chose "Always allow"; the hook
 /// forwards it to Claude Code as `updatedPermissions.rules[0]` so the
 /// pattern lands in the user's `localSettings`.
-struct PermissionDecision {
+struct PermissionDecision: Sendable {
     let behavior: String                     // "allow" | "deny"
     let rule: PermissionRuleSuggestion?
 
@@ -45,29 +45,12 @@ struct PermissionDecision {
     }
 }
 
-/// Decision parked for the long-polling hook, scoped to the originating
-/// event. The eventID guard means a click that arrives after the hook's
-/// long-poll horizon expired can't be harvested by an unrelated later
-/// event's poll (issue #31).
-struct PendingResponse {
-    let eventID: UUID
-    let decision: PermissionDecision
-}
-
-private struct ResponseWaiter {
-    let eventID: UUID
-    let continuation: CheckedContinuation<PermissionDecision, Never>
-}
-
 class LocalServer {
     let port: UInt16
     private var listener: NWListener?
     private weak var stateManager: IslandStateManager?
 
-    /// Pending permission response — hook script polls this
-    private var pendingResponse: PendingResponse?
-    private let responseLock = NSLock()
-    private var responseWaiters: [ResponseWaiter] = []
+    private let responseStore = ResponseWaiterStore<PermissionDecision>()
 
     init(stateManager: IslandStateManager, port: UInt16 = 9423) {
         self.stateManager = stateManager
@@ -80,15 +63,11 @@ class LocalServer {
     /// unrelated subsequent event.
     func setResponse(_ behavior: String, rule: PermissionRuleSuggestion? = nil, eventID: UUID) {
         let decision = PermissionDecision(behavior: behavior, rule: rule)
-        responseLock.lock()
-        let matching = responseWaiters.filter { $0.eventID == eventID }
-        responseWaiters.removeAll { $0.eventID == eventID }
-        if matching.isEmpty {
-            pendingResponse = PendingResponse(eventID: eventID, decision: decision)
-        }
-        responseLock.unlock()
-        for waiter in matching {
-            waiter.continuation.resume(returning: decision)
+        // UI button handlers are synchronous; hop into the actor and return
+        // immediately so the panel can dismiss without waiting on server state.
+        // The hook long-poll observes the decision on the next actor turn.
+        Task {
+            await responseStore.resolve(decision, eventID: eventID)
         }
     }
 
@@ -283,41 +262,12 @@ class LocalServer {
             return
         }
 
-        responseLock.lock()
-        if let pending = pendingResponse, pending.eventID == eventID {
-            pendingResponse = nil
-            responseLock.unlock()
-            sendHTTP(connection, body: pending.decision.jsonBody)
-            return
-        }
-        responseLock.unlock()
-
-        // Long-poll: wait for response with timeout
         Task {
-            let result = await withTaskGroup(of: PermissionDecision.self, returning: PermissionDecision.self) { group in
-                group.addTask {
-                    await withCheckedContinuation { continuation in
-                        self.responseLock.lock()
-                        // Check again in case it arrived for our event
-                        if let pending = self.pendingResponse, pending.eventID == eventID {
-                            self.pendingResponse = nil
-                            self.responseLock.unlock()
-                            continuation.resume(returning: pending.decision)
-                        } else {
-                            self.responseWaiters.append(ResponseWaiter(eventID: eventID, continuation: continuation))
-                            self.responseLock.unlock()
-                        }
-                    }
-                }
-                group.addTask {
-                    try? await Task.sleep(nanoseconds: 25_000_000_000) // 25s timeout
-                    return timeoutDecision
-                }
-                let first = await group.next()!
-                group.cancelAll()
-                return first
-            }
-
+            let result = await responseStore.wait(
+                eventID: eventID,
+                timeoutValue: timeoutDecision,
+                timeoutNanoseconds: 25_000_000_000
+            )
             self.sendHTTP(connection, body: result.jsonBody)
         }
     }
