@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import IslandHookCore
 
 // MARK: - Event Model
 
@@ -31,6 +32,16 @@ struct IslandEvent: Identifiable {
     /// known reply shape; Phase 2 will add a free-form text field for
     /// those cases.
     let quickReplies: [String]?
+
+    /// Subagent identifier from the hook payload (`agent_id`). Nil for
+    /// main sessions. Used together with `project` to scope same-session
+    /// detection — see `IslandStateManager.pushEvent` (#31 follow-up).
+    let agentID: String?
+
+    /// Claude Code's session UUID from the hook payload, when available.
+    /// Lets us tell two main sessions in the same project apart for the
+    /// same purpose as `agentID`.
+    let sessionID: String?
 
     /// Color signaling event source. Falls back to a deterministic
     /// project-name hash when the source isn't known, so legacy callers
@@ -76,7 +87,9 @@ struct IslandEvent: Identifiable {
         project: String? = nil,
         source: String? = nil,
         suggestedRule: PermissionRuleSuggestion? = nil,
-        quickReplies: [String]? = nil
+        quickReplies: [String]? = nil,
+        agentID: String? = nil,
+        sessionID: String? = nil
     ) {
         self.id = id
         self.icon = icon
@@ -91,6 +104,8 @@ struct IslandEvent: Identifiable {
         self.source = source
         self.suggestedRule = suggestedRule
         self.quickReplies = quickReplies
+        self.agentID = agentID
+        self.sessionID = sessionID
     }
 }
 
@@ -227,6 +242,13 @@ class IslandStateManager: ObservableObject {
     /// out silently. FIFO — drained one-at-a-time by `dismiss()`.
     @Published private(set) var pendingActions: [IslandEvent] = []
 
+    /// Flips to `true` when the current event's hook-side long-poll has
+    /// timed out, so the UI can disable buttons and show a "reply window
+    /// expired" hint instead of silently no-op'ing on a late click (#31).
+    /// Reset on every `showEvent`.
+    @Published private(set) var currentEventExpired: Bool = false
+    private var expirationTimer: Timer?
+
     /// Reference to server for sending permission responses
     weak var server: LocalServer?
 
@@ -289,17 +311,34 @@ class IslandStateManager: ObservableObject {
             //   - .reminder with quick-reply buttons (#20 Phase 1 Stop reply)
             // Both have a hook waiting on `/response`; clobbering the event
             // strands the hook in a 25-30 s timeout. Queue another such
-            // event; drop transient pings.
-            let inDecision = self.currentEvent?.style == .action
-                || (self.currentEvent?.style == .reminder
-                    && self.currentEvent?.quickReplies != nil)
+            // event; drop transient pings from *other* sessions. Once
+            // `currentEventExpired` flips, the hook is gone — release the
+            // lock so any new event can take over instead of leaving a
+            // frozen ghost on screen (#31).
+            let inDecision = !self.currentEventExpired
+                && (self.currentEvent?.style == .action
+                    || (self.currentEvent?.style == .reminder
+                        && self.currentEvent?.quickReplies != nil))
             if inDecision {
                 let isDecisionEvent = event.style == .action
                     || (event.style == .reminder && event.quickReplies != nil)
-                if isDecisionEvent {
+
+                let isSameSession = self.isSameSession(event, as: self.currentEvent)
+
+                // Same-session escape hatch: if the current event came from
+                // session X and a non-decision event from the same session
+                // arrives, the user already answered on the terminal side
+                // (Claude moved on to PreToolUse / PostToolUse). Release the
+                // lock so the new event takes over immediately rather than
+                // waiting out the hook timeout.
+                if !isDecisionEvent && isSameSession {
+                    // fall through to showEvent
+                } else if isDecisionEvent {
                     self.pendingActions.append(event)
+                    return
+                } else {
+                    return // other-session transient: keep protecting
                 }
-                return
             }
 
             self.showEvent(event)
@@ -322,6 +361,31 @@ class IslandStateManager: ObservableObject {
             mode = needsExpanded ? .expanded : .compact
         }
 
+        // Mirror the hook's long-poll horizon so the UI knows when a click
+        // would arrive too late to matter. Disabling the buttons + showing
+        // an "expired" hint is friendlier than a silent no-op (#31).
+        // After a brief read window the pill auto-dismisses so it doesn't
+        // turn into a permanent ghost — the queue guard also releases
+        // (see `pushEvent`) so a new event can take over before then.
+        currentEventExpired = false
+        expirationTimer?.invalidate()
+        if let timeout = expirationTimeout(for: event) {
+            expirationTimer = Timer.scheduledTimer(withTimeInterval: timeout, repeats: false) { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self, self.currentEvent?.id == event.id else { return }
+                    self.currentEventExpired = true
+                    // Auto-dismiss after a short read window so the slot
+                    // doesn't stay locked.
+                    Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in
+                        DispatchQueue.main.async {
+                            guard let self, self.currentEvent?.id == event.id else { return }
+                            self.dismiss()
+                        }
+                    }
+                }
+            }
+        }
+
         if !event.persistent {
             dismissTimer = Timer.scheduledTimer(withTimeInterval: event.duration, repeats: false) { [weak self] _ in
                 DispatchQueue.main.async {
@@ -330,6 +394,27 @@ class IslandStateManager: ObservableObject {
                 }
             }
         }
+    }
+
+    /// How long until the hook on the other end gives up waiting for a
+    /// reply. Mirrors the hard-coded 25 s in `LocalServer.handleResponsePoll`
+    /// for `.action`, and `IslandHookCore.StopReplyTimeoutSeconds` for the
+    /// quick-reply path. `nil` for events with no decision affordance.
+    private func expirationTimeout(for event: IslandEvent) -> TimeInterval? {
+        if event.style == .action { return 25 }
+        if event.quickReplies != nil { return StopReplyTimeoutSeconds }
+        return nil
+    }
+
+    /// Two events are "same session" when they share Claude's session UUID,
+    /// or when both lack one but agree on (project, agentID). Lets us
+    /// detect that the user resolved a permission/stop prompt on the
+    /// terminal side — the next non-decision event from that session is
+    /// our cue to release the lock and dismiss the stale pill.
+    private func isSameSession(_ a: IslandEvent, as b: IslandEvent?) -> Bool {
+        guard let b else { return false }
+        if let sa = a.sessionID, let sb = b.sessionID { return sa == sb }
+        return a.project == b.project && a.agentID == b.agentID
     }
 
     func expand() {
@@ -355,6 +440,8 @@ class IslandStateManager: ObservableObject {
 
     func dismiss() {
         dismissTimer?.invalidate()
+        expirationTimer?.invalidate()
+        currentEventExpired = false
 
         // Drain the queued-action backlog before hiding — the next pending
         // action surfaces here rather than waiting for an external event.

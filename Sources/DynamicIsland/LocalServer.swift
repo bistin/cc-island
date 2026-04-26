@@ -45,33 +45,50 @@ struct PermissionDecision {
     }
 }
 
+/// Decision parked for the long-polling hook, scoped to the originating
+/// event. The eventID guard means a click that arrives after the hook's
+/// long-poll horizon expired can't be harvested by an unrelated later
+/// event's poll (issue #31).
+struct PendingResponse {
+    let eventID: UUID
+    let decision: PermissionDecision
+}
+
+private struct ResponseWaiter {
+    let eventID: UUID
+    let continuation: CheckedContinuation<PermissionDecision, Never>
+}
+
 class LocalServer {
     let port: UInt16
     private var listener: NWListener?
     private weak var stateManager: IslandStateManager?
 
     /// Pending permission response — hook script polls this
-    private var pendingResponse: PermissionDecision?
+    private var pendingResponse: PendingResponse?
     private let responseLock = NSLock()
-    private var responseWaiters: [CheckedContinuation<PermissionDecision, Never>] = []
+    private var responseWaiters: [ResponseWaiter] = []
 
     init(stateManager: IslandStateManager, port: UInt16 = 9423) {
         self.stateManager = stateManager
         self.port = port
     }
 
-    /// Called from UI when user taps Allow/Deny/Always.
-    func setResponse(_ behavior: String, rule: PermissionRuleSuggestion? = nil) {
+    /// Called from UI when user taps Allow/Deny/Always or a quick reply.
+    /// `eventID` scopes the response to the originating event so late
+    /// clicks (after the hook's long-poll timed out) can't leak into an
+    /// unrelated subsequent event.
+    func setResponse(_ behavior: String, rule: PermissionRuleSuggestion? = nil, eventID: UUID) {
         let decision = PermissionDecision(behavior: behavior, rule: rule)
         responseLock.lock()
-        let waiters = responseWaiters
-        responseWaiters.removeAll()
-        if waiters.isEmpty {
-            pendingResponse = decision
+        let matching = responseWaiters.filter { $0.eventID == eventID }
+        responseWaiters.removeAll { $0.eventID == eventID }
+        if matching.isEmpty {
+            pendingResponse = PendingResponse(eventID: eventID, decision: decision)
         }
         responseLock.unlock()
-        for waiter in waiters {
-            waiter.resume(returning: decision)
+        for waiter in matching {
+            waiter.continuation.resume(returning: decision)
         }
     }
 
@@ -179,7 +196,7 @@ class LocalServer {
     /// `handleConnection` switch — just unblocked from read-loop concerns.
     private func dispatch(connection: NWConnection, request: HTTPRequest) {
         if request.path.hasPrefix("/response") {
-            handleResponsePoll(connection)
+            handleResponsePoll(connection, requestPath: request.path)
         } else if request.path.hasPrefix("/event") {
             do {
                 guard !request.body.isEmpty else {
@@ -252,14 +269,25 @@ class LocalServer {
         })
     }
 
-    /// Long-poll: waits up to 25s for user to tap Allow/Deny/Always, then returns the choice
-    private func handleResponsePoll(_ connection: NWConnection) {
+    /// Long-poll: waits up to 25 s for user to tap Allow/Deny/Always or a
+    /// quick reply for the event matching `event_id`, then returns the
+    /// choice. A poll without `event_id`, or with one that never matches,
+    /// returns "timeout" — never a parked decision from another event.
+    private func handleResponsePoll(_ connection: NWConnection, requestPath: String) {
         let timeoutDecision = PermissionDecision(behavior: "timeout", rule: nil)
+
+        guard let eventID = Self.parseEventID(from: requestPath) else {
+            // Hook didn't supply an event_id — refuse to hand out a parked
+            // decision since we can't prove it belongs to this caller.
+            sendHTTP(connection, body: timeoutDecision.jsonBody)
+            return
+        }
+
         responseLock.lock()
-        if let response = pendingResponse {
+        if let pending = pendingResponse, pending.eventID == eventID {
             pendingResponse = nil
             responseLock.unlock()
-            sendHTTP(connection, body: response.jsonBody)
+            sendHTTP(connection, body: pending.decision.jsonBody)
             return
         }
         responseLock.unlock()
@@ -270,13 +298,13 @@ class LocalServer {
                 group.addTask {
                     await withCheckedContinuation { continuation in
                         self.responseLock.lock()
-                        // Check again in case it arrived
-                        if let response = self.pendingResponse {
+                        // Check again in case it arrived for our event
+                        if let pending = self.pendingResponse, pending.eventID == eventID {
                             self.pendingResponse = nil
                             self.responseLock.unlock()
-                            continuation.resume(returning: response)
+                            continuation.resume(returning: pending.decision)
                         } else {
-                            self.responseWaiters.append(continuation)
+                            self.responseWaiters.append(ResponseWaiter(eventID: eventID, continuation: continuation))
                             self.responseLock.unlock()
                         }
                     }
@@ -292,6 +320,18 @@ class LocalServer {
 
             self.sendHTTP(connection, body: result.jsonBody)
         }
+    }
+
+    private static func parseEventID(from path: String) -> UUID? {
+        guard let queryStart = path.firstIndex(of: "?") else { return nil }
+        let query = path[path.index(after: queryStart)...]
+        for pair in query.split(separator: "&") {
+            let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            if kv.count == 2, kv[0] == "event_id" {
+                return UUID(uuidString: kv[1])
+            }
+        }
+        return nil
     }
 
     private func processEvent(_ data: Data) throws {
@@ -378,7 +418,14 @@ class LocalServer {
             }
         }
 
+        // Adopt the hook's event_id so the UI's setResponse poll can be
+        // matched back to this event (#31). Falls back to a fresh UUID for
+        // legacy callers / manual POSTs without one.
+        let payloadID = (json["event_id"] as? String).flatMap(UUID.init(uuidString:))
+        let agentIDValue = json["agent_id"] as? String
+        let sessionIDValue = json["session_id"] as? String
         let event = IslandEvent(
+            id: payloadID ?? UUID(),
             icon: icon,
             title: title,
             subtitle: subtitle,
@@ -390,7 +437,9 @@ class LocalServer {
             project: project,
             source: source,
             suggestedRule: suggestedRule,
-            quickReplies: quickReplies
+            quickReplies: quickReplies,
+            agentID: agentIDValue,
+            sessionID: sessionIDValue
         )
 
         // Route into the session tree: main session when no agent_id, else
