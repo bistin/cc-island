@@ -21,6 +21,13 @@ public struct HookPlan {
     /// questions (#36 dogfood gate). The matching app-side flag is
     /// `UserDefaults.enableInlineReply`; both must be set.
     public let inlineReplyEnabled: Bool
+    /// Stop reply long-poll horizon in seconds (#41). Sourced from
+    /// `CC_ISLAND_STOP_TIMEOUT` at hook-spawn time; falls back to
+    /// `StopReplyTimeoutSeconds` (30) when the env var is missing,
+    /// non-numeric, or `<= 0`. Drives `island-hook` Stop case
+    /// `longPollResponse` and is mirrored into the `~/.claude/settings.json`
+    /// Stop entry's `timeout` field on install.
+    public let stopReplyTimeoutSeconds: TimeInterval
 
     public init(
         payload: [String: Any], source: String, event: String, tool: String,
@@ -28,7 +35,8 @@ public struct HookPlan {
         agentId: String?, agentType: String?,
         toolInput: [String: Any], copilotToolArgs: [String: Any],
         cpError: String?,
-        inlineReplyEnabled: Bool = false
+        inlineReplyEnabled: Bool = false,
+        stopReplyTimeoutSeconds: TimeInterval = StopReplyTimeoutSeconds
     ) {
         self.payload = payload
         self.source = source
@@ -43,6 +51,7 @@ public struct HookPlan {
         self.copilotToolArgs = copilotToolArgs
         self.cpError = cpError
         self.inlineReplyEnabled = inlineReplyEnabled
+        self.stopReplyTimeoutSeconds = stopReplyTimeoutSeconds
     }
 }
 
@@ -121,13 +130,27 @@ public func parseHookPlan(payload: [String: Any], env: [String: String] = [:]) -
         return dict
     }()
 
+    // #41 Stop reply timeout — env var injected by HookInstaller from
+    // the user's UserDefault. Reject missing / non-numeric / non-positive
+    // values so a misconfigured env never silently makes the long-poll
+    // 0 seconds.
+    let stopReplyTimeoutSeconds: TimeInterval = {
+        guard let raw = env["CC_ISLAND_STOP_TIMEOUT"],
+              let parsed = TimeInterval(raw),
+              parsed > 0 else {
+            return StopReplyTimeoutSeconds
+        }
+        return parsed
+    }()
+
     return HookPlan(
         payload: payload, source: source, event: event, tool: tool,
         cwd: cwd, project: project, displayProject: displayProject,
         agentId: agentId, agentType: agentType,
         toolInput: toolInput, copilotToolArgs: copilotToolArgs,
         cpError: cpError,
-        inlineReplyEnabled: env["CC_ISLAND_INLINE_REPLY"] == "1"
+        inlineReplyEnabled: env["CC_ISLAND_INLINE_REPLY"] == "1",
+        stopReplyTimeoutSeconds: stopReplyTimeoutSeconds
     )
 }
 

@@ -204,4 +204,52 @@ final class HookPlanTests: XCTestCase {
             XCTAssertEqual(plan?.inlineReplyEnabled, false, "value \(raw) should not enable")
         }
     }
+
+    // MARK: - stopReplyTimeoutSeconds (#41)
+
+    func testStopReplyTimeout_envSetToValid_usesParsedValue() {
+        let plan = parseHookPlan(
+            payload: ["hook_event_name": "Stop", "cwd": "/tmp"],
+            env: ["CC_ISLAND_STOP_TIMEOUT": "45"]
+        )
+        XCTAssertEqual(plan?.stopReplyTimeoutSeconds, 45)
+    }
+
+    func testStopReplyTimeout_envUnset_fallsBackToDefault() {
+        let plan = parseHookPlan(
+            payload: ["hook_event_name": "Stop", "cwd": "/tmp"]
+        )
+        XCTAssertEqual(plan?.stopReplyTimeoutSeconds, StopReplyTimeoutSeconds)
+    }
+
+    func testStopReplyTimeout_envNonNumeric_fallsBackToDefault() {
+        let plan = parseHookPlan(
+            payload: ["hook_event_name": "Stop", "cwd": "/tmp"],
+            env: ["CC_ISLAND_STOP_TIMEOUT": "thirty"]
+        )
+        XCTAssertEqual(plan?.stopReplyTimeoutSeconds, StopReplyTimeoutSeconds)
+    }
+
+    func testStopReplyTimeout_envZeroOrNegative_fallsBackToDefault() {
+        // 0 / negative would silently make the long-poll instantaneous —
+        // worse than honoring the default. Both must fall back.
+        for raw in ["0", "0.0", "-5", "-30"] {
+            let plan = parseHookPlan(
+                payload: ["hook_event_name": "Stop", "cwd": "/tmp"],
+                env: ["CC_ISLAND_STOP_TIMEOUT": raw]
+            )
+            XCTAssertEqual(
+                plan?.stopReplyTimeoutSeconds, StopReplyTimeoutSeconds,
+                "value \(raw) should fall back to default"
+            )
+        }
+    }
+
+    func testStopReplyTimeout_envFractional_isAccepted() {
+        let plan = parseHookPlan(
+            payload: ["hook_event_name": "Stop", "cwd": "/tmp"],
+            env: ["CC_ISLAND_STOP_TIMEOUT": "12.5"]
+        )
+        XCTAssertEqual(plan?.stopReplyTimeoutSeconds, 12.5)
+    }
 }
