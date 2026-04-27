@@ -92,7 +92,10 @@ func writeContextCache() {
         at: contextURL.deletingLastPathComponent(),
         withIntermediateDirectories: true
     )
-    try? inputData.write(to: contextURL)
+    // .atomic so a process crash mid-write can't leave a truncated
+    // JSON for the next PermissionRequest to read. Single-slot cache,
+    // worst case the previous payload survives — never a half one.
+    try? inputData.write(to: contextURL, options: [.atomic])
 }
 
 func readCachedToolInput() -> (toolName: String, input: [String: Any])? {

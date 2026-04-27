@@ -37,6 +37,23 @@ final class PreToolCacheTests: XCTestCase {
         XCTAssertEqual(preToolCacheKey(plan: plan), "demo")
     }
 
+    func testKey_sanitisesUnsafeProjectName() {
+        // Path separators in project name (e.g. someone passing the
+        // full cwd through) shouldn't escape the pretool/ directory.
+        let plan = makePlan(sessionID: nil, agentId: nil, project: "foo/bar")
+        XCTAssertEqual(preToolCacheKey(plan: plan), "foo_bar")
+    }
+
+    func testKey_sanitisesAgentBranchInputs() {
+        let plan = makePlan(sessionID: nil, agentId: "ag/1", project: "demo space")
+        XCTAssertEqual(preToolCacheKey(plan: plan), "agent-ag_1-demo_space")
+    }
+
+    func testKey_sanitisesSessionIDPath() {
+        let plan = makePlan(sessionID: "sess/with/slash", agentId: nil, project: "demo")
+        XCTAssertEqual(preToolCacheKey(plan: plan), "sess_with_slash")
+    }
+
     // MARK: - sanitiseCacheKey
 
     func testSanitise_passthroughForSafeKey() {
