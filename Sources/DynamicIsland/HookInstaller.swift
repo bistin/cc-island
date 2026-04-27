@@ -407,10 +407,32 @@ enum HookInstaller {
         }
     }
 
+    /// Decide whether a settings entry's `command` string was written by
+    /// us, so we can distinguish our entries from a user's other tooling
+    /// (e.g. gemini-bridge.sh). Strict path comparison after stripping
+    /// env-prefix and shell quotes — substring matching like the older
+    /// implementation could pick up unrelated paths that happened to
+    /// contain `dynamic-island-hook` or the very generic `DynamicIsland`
+    /// substring.
     private static func isOurs(commandPath: String) -> Bool {
-        let markers = ["dynamic-island-hook", "island-hook.sh", "claude-hook.sh", "DynamicIsland"]
-        return markers.contains { commandPath.contains($0) }
+        Self.knownOwnedHookPaths.contains(stripCommandPrefix(commandPath))
     }
+
+    /// Canonical set of hook-binary paths we ever owned, across all
+    /// supported targets and historical layouts. Anything outside this
+    /// set is somebody else's hook and must be left alone.
+    private static let knownOwnedHookPaths: Set<String> = {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return [
+            // Current — Swift binary, deployed by `deployHookScript`
+            "\(home)/.claude/hooks/dynamic-island-hook",
+            "\(home)/.copilot/hooks/dynamic-island-hook",
+            "\(home)/.codex/hooks/dynamic-island-hook",
+            // Pre-v1.5 — bash script with `jq`
+            "\(home)/.claude/hooks/island-hook.sh",
+            "\(home)/.claude/hooks/claude-hook.sh",
+        ]
+    }()
 
     struct SettingsParseError: LocalizedError {
         let path: String
