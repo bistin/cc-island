@@ -1,4 +1,5 @@
 import AppKit
+import IslandHookCore
 import SwiftUI
 
 @main
@@ -108,9 +109,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let screenFollower = ScreenFollower()
     private var screenChangeObserver: NSObjectProtocol?
 
+    // Strongly retained — without this property, the window deallocates
+    // on first close and cmd-, would break (#41 review).
+    private var settingsWindowController: SettingsWindowController?
+
     private static let hookChoiceKey = "hookInstallChoice"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // #41: register UserDefaults defaults so unset reads return the
+        // documented values rather than 0 / false at the bare API level.
+        // Per-call sites still use `positiveDouble(...)` as a belt-and-
+        // suspenders fallback — covers the case where the user explicitly
+        // sets a key to 0.
+        dynamicIslandUserDefaults.register(defaults: [
+            stopReplyTimeoutKey: StopReplyTimeoutSeconds,
+            screenFollowerDwellKey: 200.0,
+        ])
+
         panel = IslandPanel(stateManager: stateManager)
         panel.show()
 
@@ -169,6 +184,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
+        let settings = NSMenuItem(
+            title: "Settings…",
+            action: #selector(showSettings),
+            keyEquivalent: ",")
+        settings.keyEquivalentModifierMask = [.command]
+        menu.addItem(settings)
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(
             title: "Reinstall Claude Code Hooks",
             action: #selector(reinstallHooks),
@@ -211,6 +233,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         image.isTemplate = true
         return image
+    }
+
+    @objc private func showSettings() {
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController.make(
+                stateManager: stateManager
+            )
+        }
+        settingsWindowController?.present()
     }
 
     @objc private func reinstallHooks() {

@@ -3,10 +3,22 @@ import Foundation
 import DynamicIslandCore
 
 /// Polls the cursor at 20 Hz and fires `onTargetChanged` when the cursor
-/// has dwelled on a different screen for `dwellSeconds`. Bump
-/// `dwellSeconds` (300–400 ms) if 200 ms feels twitchy in practice.
+/// has dwelled on a different screen for `dwellSeconds`. The dwell value
+/// is read live from `dynamicIslandUserDefaults` (#41 settings panel) so
+/// changes from the Settings panel apply on the next cursor move without
+/// a restart. The default (200 ms) lives in the `positiveDouble`
+/// fallback — non-positive / unset stored values fall back to it.
 final class ScreenFollower {
-    var dwellSeconds: TimeInterval = 0.2
+    /// Live dwell horizon. Reads `screenFollowerDwellKey` (ms units in
+    /// UserDefaults) per access and converts to seconds. Per-tick read
+    /// is cheap; doing it inside `tick()` keeps the value reactive.
+    var dwellSeconds: TimeInterval {
+        positiveDouble(
+            dynamicIslandUserDefaults,
+            forKey: screenFollowerDwellKey,
+            default: 200
+        ) / 1000
+    }
     var pollInterval: TimeInterval = 0.05
     var onTargetChanged: ((NSScreen) -> Void)?
 

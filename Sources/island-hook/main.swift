@@ -177,7 +177,9 @@ case "Stop":
     let hasQuickReplies = stopPayload["quick_replies"] is [String]
     let hasFreeformReply = (stopPayload["freeform_replyable"] as? Bool) == true
     if hasQuickReplies || hasFreeformReply {
-        let decision = longPollResponse(timeoutSeconds: StopReplyTimeoutSeconds)
+        // #41: horizon sourced from `CC_ISLAND_STOP_TIMEOUT` env (parsed
+        // into `plan.stopReplyTimeoutSeconds` with default fallback).
+        let decision = longPollResponse(timeoutSeconds: plan.stopReplyTimeoutSeconds)
         if decision.behavior != "timeout" && !decision.behavior.isEmpty {
             print(encodeStopBlockResponse(reason: decision.behavior))
         }

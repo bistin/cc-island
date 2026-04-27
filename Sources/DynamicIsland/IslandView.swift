@@ -353,7 +353,7 @@ struct RightEarView: View {
 struct ExpandedContentView: View {
     let event: IslandEvent
     @ObservedObject var stateManager: IslandStateManager
-    // TODO(settings): expose enableInlineReply in #11 settings pane.
+    // Settings panel binding (#41). Mirrors the toggle in `SettingsView`.
     // Drives whether `.freeformText` events render an `InlineReplyField`.
     // Default false → no behavioural change for users who haven't opted in.
     @AppStorage(enableInlineReplyKey, store: dynamicIslandUserDefaults)
@@ -533,7 +533,7 @@ struct ExpandedPillView: View {
     let event: IslandEvent
     @ObservedObject var stateManager: IslandStateManager
     @State private var actionPulse = false
-    // TODO(settings): expose enableInlineReply in #11 settings pane.
+    // Settings panel binding (#41). Mirrors the toggle in `SettingsView`.
     @AppStorage(enableInlineReplyKey, store: dynamicIslandUserDefaults)
     private var inlineReplyEnabled = false
 

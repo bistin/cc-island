@@ -1,5 +1,6 @@
 import DynamicIslandCore
 import Foundation
+import IslandHookCore
 
 /// Shared UserDefaults store for app-wide preferences.
 ///
@@ -36,6 +37,40 @@ let dynamicIslandUserDefaults: UserDefaults = {
 /// whether to inject the env var, and by `IslandPanel.canBecomeKey`
 /// to allow keyboard focus only when a reply field is on screen.
 let enableInlineReplyKey = "enableInlineReply"
+
+/// UserDefaults key for the Stop reply long-poll horizon, in seconds (#41).
+/// Read by `HookInstaller.commandString` (injected as `CC_ISLAND_STOP_TIMEOUT`
+/// env) and by `HookInstaller.events` (mirrored into the Stop entry's
+/// `timeout` field, with a +5 s round-trip buffer). Default `30`.
+let stopReplyTimeoutKey = "stopReplyTimeoutSeconds"
+
+/// UserDefaults key for the screen-follower dwell debounce, in
+/// milliseconds (#41). Read at runtime by `ScreenFollower` per cursor
+/// move. Default `200`.
+let screenFollowerDwellKey = "screenFollowerDwellMilliseconds"
+
+/// Read a positive `Double` UserDefault, falling back to `defaultValue`
+/// when the key is unset, malformed, or `<= 0`.
+///
+/// `UserDefaults.double(forKey:)` returns `0` for an unset key, which
+/// would silently make a 30-second long-poll instantaneous or freeze
+/// the screen-follower dwell. This wrapper makes the fallback contract
+/// explicit at every read site (#41 review).
+func positiveDouble(
+    _ store: UserDefaults,
+    forKey key: String,
+    default defaultValue: Double
+) -> Double {
+    let raw = store.double(forKey: key)
+    return raw > 0 ? raw : defaultValue
+}
+
+/// Format a `Double` for the `CC_ISLAND_STOP_TIMEOUT=…` env injection.
+/// `%g` strips trailing zeros so a default of `30.0` renders as `30`,
+/// keeping the on-disk command string canonical.
+func formatStopTimeout(_ value: Double) -> String {
+    String(format: "%g", value)
+}
 
 /// Deploys the bundled `island-hook` binary and registers hook events for
 /// Claude Code (`~/.claude/settings.json`), GitHub Copilot
@@ -119,18 +154,27 @@ enum HookInstaller {
                 // generated command, so this also makes the on-disk shape
                 // canonical regardless of dogfood gate.
                 let quoted = shellQuote(path)
+                var prefixes: [String] = []
                 // #36 dogfood gate: when the user has flipped
-                // `enableInlineReplyKey` (via `defaults write`) and triggers
-                // a hook reinstall, every Claude hook command picks up the
-                // env var. The env only matters to the `Stop` event
-                // (PayloadBuilder reads it into `HookPlan.inlineReplyEnabled`
-                // → emits `freeform_replyable: true` + long-polls); leaving
-                // it on the other commands is harmless and keeps the
-                // install diff to a single command-string accessor.
+                // `enableInlineReplyKey` (via `defaults write` or the
+                // Settings panel) and reinstalls hooks, every Claude
+                // hook command picks up the env var. Only the `Stop`
+                // event reads it (PayloadBuilder → `HookPlan.inlineReplyEnabled`),
+                // but leaving it on the others is harmless and keeps
+                // the install diff to a single command-string accessor.
                 if dynamicIslandUserDefaults.bool(forKey: enableInlineReplyKey) {
-                    return "CC_ISLAND_INLINE_REPLY=1 \(quoted)"
+                    prefixes.append("CC_ISLAND_INLINE_REPLY=1")
                 }
-                return quoted
+                // #41: Stop reply long-poll horizon. Always emitted so
+                // `currentlyInSync` byte-compare matches a fresh install
+                // — same value on disk and in memory.
+                let stopTimeout = positiveDouble(
+                    dynamicIslandUserDefaults,
+                    forKey: stopReplyTimeoutKey,
+                    default: StopReplyTimeoutSeconds
+                )
+                prefixes.append("CC_ISLAND_STOP_TIMEOUT=\(formatStopTimeout(stopTimeout))")
+                return "\(prefixes.joined(separator: " ")) \(quoted)"
             case .copilot:
                 return path
             case .codex:
@@ -148,12 +192,19 @@ enum HookInstaller {
                     ("PermissionRequest",  "Bash|Edit|Write|MultiEdit|NotebookEdit",  30),
                     ("PermissionDenied",   "",                                         5),
                     ("Notification",       "",                                         5),
-                    // Stop long-polls `/response` for `StopReplyTimeoutSeconds`
-                    // (30 s) when the user has a reply UI (#20 quick replies or
-                    // #36 inline text). Claude Code SIGKILLs hooks at the
-                    // timeout, so the registered timeout must outlive the
-                    // long-poll horizon. +5 s buffer for response round-trip.
-                    ("Stop",               "",                                         35),
+                    // Stop long-polls `/response` for the user's Stop reply
+                    // timeout setting (#41) when the user has a reply UI
+                    // (#20 quick replies or #36 inline text). Claude Code
+                    // SIGKILLs hooks at the registered timeout, so the
+                    // entry must outlive the long-poll horizon. +5 s buffer
+                    // for round-trip. Derived from the same UserDefault the
+                    // env injection reads, so settings.json command and
+                    // entry timeout move together on each install.
+                    ("Stop", "", Int(ceil(positiveDouble(
+                        dynamicIslandUserDefaults,
+                        forKey: stopReplyTimeoutKey,
+                        default: StopReplyTimeoutSeconds
+                    ) + 5))),
                     ("StopFailure",        "",                                         5),
                     ("SubagentStart",      "",                                         5),
                     ("SubagentStop",       "",                                         5),
