@@ -787,6 +787,14 @@ struct DiffDetailView: View {
 
     private var lines: [Substring] { text.split(separator: "\n", omittingEmptySubsequences: false) }
 
+    /// True when the text looks like a unified diff (has at least one
+    /// line starting with `+ ` — additions). Without this guard, plain
+    /// markdown bullet lines (`- foo`) on a non-diff Stop reply detail
+    /// would render bright red as if they were diff deletions.
+    private var looksLikeDiff: Bool {
+        lines.contains { $0.hasPrefix("+ ") }
+    }
+
     private let maxVisibleHeight: CGFloat = 160
 
     var body: some View {
@@ -840,6 +848,7 @@ struct DiffDetailView: View {
     }
 
     private func color(for line: Substring) -> Color {
+        guard looksLikeDiff else { return .white.opacity(0.65) }
         if line.hasPrefix("- ") { return Color(red: 1.0, green: 0.55, blue: 0.55) }
         if line.hasPrefix("+ ") { return Color(red: 0.55, green: 0.95, blue: 0.65) }
         return .white.opacity(0.65)
