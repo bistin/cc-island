@@ -5,7 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.0] - 2026-04-27
+
+### Added
+- **Settings panel** — new macOS Settings window opened from the
+  menu bar icon → "Settings…" or `cmd-,`. First slice exposes an
+  inline-reply toggle, the Stop reply timeout (seconds), and the
+  screen follower dwell (milliseconds). UI bindings via
+  `@AppStorage`; hook-side propagation (Stop timeout + inline reply
+  env) requires a Reinstall Claude Code Hooks click which the
+  panel surfaces explicitly. Source colours / per-provider sync
+  toggles deferred to follow-up PRs.
+  ([#42](https://github.com/bistin/cc-island/pull/42),
+  [#41](https://github.com/bistin/cc-island/issues/41))
+- **Inline text reply for Stop events** — Phase 2 of #20. When a
+  Stop hook ends with a free-form question (no yes/no shape), the
+  island renders a single-line `TextField` + Send button. Submit
+  posts the typed string through the same `/response` channel
+  Phase 1 (#29) wired for quick replies; the hook emits
+  `decision: block + reason: <text>` so Claude treats it as next
+  user input. Gated by `enableInlineReply` UserDefault on the app
+  side and `CC_ISLAND_INLINE_REPLY=1` env on the hook side, both
+  default off; flip via the Settings panel.
+  ([#40](https://github.com/bistin/cc-island/pull/40); thanks
+  @xero7689 for the original Phase 1 scope review)
 
 ### Changed
 - **Bundle id renamed** from `com.bistin.dynamic-island` to
@@ -16,9 +39,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   upgrade, the install-prompt choice (`hookInstallChoice`) and any
   inline-reply dogfood flag (`enableInlineReply`) reset to defaults.
   No-op for new installs. `dynamicIslandUserDefaults` now resolves
-  in this order: `Bundle.main.bundleIdentifier` (production `.app` —
-  forks pick up their own id automatically) → fallback to the new
-  bundle id (SwiftPM CLI / debug GUI builds) → `.standard`.
+  via `Bundle.main.bundleIdentifier` first (so forks pick up their
+  own id automatically), fallback to the new bundle id only for
+  SwiftPM CLI / debug GUI builds where `Bundle.main` is nil.
+
+### Fixed
+- **Stop hook timeout 5 → 35 s.** Claude Code SIGKILLs hooks at
+  the registered timeout, so the 30 s long-poll horizon used by
+  quick replies (#29) was always being cut short. Quick reply only
+  worked when users clicked Yes/No within ~5 s; slower interactions
+  failed silently. The Stop hook now registers a timeout that
+  outlives the long-poll horizon plus a 5 s round-trip buffer; the
+  timeout is also tunable from the Settings panel.
+  ([#40](https://github.com/bistin/cc-island/pull/40))
+- **Atomic settings / config writes** — `HookInstaller` now routes
+  Claude's `settings.json`, Codex's `config.toml`, and the deployed
+  hook binary through a new `AtomicFileWriter`: same-directory
+  temp + atomic rename + best-effort fsync + idempotent `.bak` +
+  external-change fingerprint check. Mid-write crashes no longer
+  leave a truncated config that the next launch refuses to repair.
+  ([#39](https://github.com/bistin/cc-island/pull/39))
+- **`/response` waiter cleanup on timeout** — extracted
+  `ResponseWaiterStore` actor with explicit lifecycle for parked /
+  resolved / expired / dropped paths, so long-running hook
+  processes can no longer accumulate stale continuations after
+  successive timeouts. Late `setResponse` for an expired event id
+  is now explicitly dropped instead of parked for an unrelated
+  next poll.
+  ([#38](https://github.com/bistin/cc-island/pull/38))
+- **Codex integration polish** — added "Reinstall Codex Hooks"
+  menu item; app launch auto-syncs the deployed Codex hook binary
+  if already installed (matching the existing Claude Code path);
+  install success message now reflects the actual target's name
+  and path (no more "Hooks installed / `~/.claude/...`" reported
+  for a Codex install); Codex `PermissionRequest` no longer offers
+  the Claude-only "Always allow" rule button (the rule shape lands
+  in `~/.claude/settings.local.json`, which Codex doesn't read).
+  ([#34](https://github.com/bistin/cc-island/pull/34))
+- **Notch / capsule diff tinting no longer mistakes markdown
+  bullets for diff deletions.** `DiffDetailView` previously turned
+  every line starting with `- ` red; Stop reply details quoting
+  markdown bullet lists rendered as bright red diff deletions.
+  Tinting is now gated on the block also containing at least one
+  `+ ` line (additions), which markdown lists basically never use.
+  ([#42](https://github.com/bistin/cc-island/pull/42))
 
 ## [1.6.3] - 2026-04-26
 
