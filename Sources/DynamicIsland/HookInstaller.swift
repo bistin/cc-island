@@ -421,17 +421,27 @@ enum HookInstaller {
     /// Canonical set of hook-binary paths we ever owned, across all
     /// supported targets and historical layouts. Anything outside this
     /// set is somebody else's hook and must be left alone.
+    ///
+    /// Current-binary paths are sourced from `Target.deployedHookURL`
+    /// directly so a future relayout of one of those paths can't drift
+    /// out of sync with the ownership check. Legacy bash paths from
+    /// pre-v1.5 are kept as literals — they're frozen, not derived.
     private static let knownOwnedHookPaths: Set<String> = {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return [
-            // Current — Swift binary, deployed by `deployHookScript`
-            "\(home)/.claude/hooks/dynamic-island-hook",
-            "\(home)/.copilot/hooks/dynamic-island-hook",
-            "\(home)/.codex/hooks/dynamic-island-hook",
-            // Pre-v1.5 — bash script with `jq`
+        // Copilot's `deployedHookURL` ignores its associated repoPath
+        // (the binary lives globally, each repo's config just references
+        // it). Pass a placeholder URL just to construct the case.
+        let copilotPlaceholder = URL(fileURLWithPath: "/")
+        let current = [
+            Target.claudeCode.deployedHookURL.path,
+            Target.copilot(repoPath: copilotPlaceholder).deployedHookURL.path,
+            Target.codex.deployedHookURL.path,
+        ]
+        let legacy = [
             "\(home)/.claude/hooks/island-hook.sh",
             "\(home)/.claude/hooks/claude-hook.sh",
         ]
+        return Set(current + legacy)
     }()
 
     struct SettingsParseError: LocalizedError {
