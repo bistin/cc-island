@@ -170,7 +170,13 @@ case "Stop":
     // for the user's choice and emit `decision: block + reason: <label>`
     // so Claude treats the label as the next instruction. Timeout drops
     // back to Claude Code's default Stop behavior silently.
-    if stopPayload["quick_replies"] is [String] {
+    //
+    // #20 Phase 2 (#36): same long-poll path when the payload signals
+    // a free-form reply is enabled. The text typed into the island's
+    // TextField rides the same channel as a quick-reply label.
+    let hasQuickReplies = stopPayload["quick_replies"] is [String]
+    let hasFreeformReply = (stopPayload["freeform_replyable"] as? Bool) == true
+    if hasQuickReplies || hasFreeformReply {
         let decision = longPollResponse(timeoutSeconds: StopReplyTimeoutSeconds)
         if decision.behavior != "timeout" && !decision.behavior.isEmpty {
             print(encodeStopBlockResponse(reason: decision.behavior))

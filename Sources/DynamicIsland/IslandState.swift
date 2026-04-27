@@ -12,6 +12,19 @@ struct PermissionRuleSuggestion: Equatable, Sendable {
     let ruleContent: String // e.g. "glab api *"
 }
 
+/// How a Stop reminder accepts a user reply. Drives both UI rendering
+/// (which control to show) and `IslandStateManager.pushEvent` decision
+/// guard logic (any non-nil mode means a hook is long-polling).
+///
+/// `quickReplies` is Phase 1 of #20 (#29) — yes/no buttons.
+/// `freeformText` is Phase 2 of #20 (#36) — single-line text input,
+/// gated by `enableInlineReply` UserDefault on the app side and
+/// `CC_ISLAND_INLINE_REPLY=1` on the hook side.
+enum ReplyMode: Equatable {
+    case quickReplies([String])
+    case freeformText
+}
+
 struct IslandEvent: Identifiable {
     let id: UUID
     let icon: String
@@ -25,13 +38,10 @@ struct IslandEvent: Identifiable {
     let project: String?  // small project name label
     let source: String?   // "claude" / "copilot" / "codex" — drives color
     let suggestedRule: PermissionRuleSuggestion?
-    /// Phase 1 of #20 (Stop reply quick-reply buttons). Non-nil for Stop
-    /// events with a recognised yes/no shape — the strings render as
-    /// labelled buttons; tapping one POSTs to /response and the hook
-    /// emits `decision:block + reason:<label>`. Nil for events without a
-    /// known reply shape; Phase 2 will add a free-form text field for
-    /// those cases.
-    let quickReplies: [String]?
+    /// How this event accepts a user reply. Non-nil means a hook is
+    /// long-polling on `/response` and the UI must render the matching
+    /// control. See `ReplyMode` for the shapes; nil = no reply UI.
+    let replyMode: ReplyMode?
 
     /// Subagent identifier from the hook payload (`agent_id`). Nil for
     /// main sessions. Used together with `project` to scope same-session
@@ -87,7 +97,7 @@ struct IslandEvent: Identifiable {
         project: String? = nil,
         source: String? = nil,
         suggestedRule: PermissionRuleSuggestion? = nil,
-        quickReplies: [String]? = nil,
+        replyMode: ReplyMode? = nil,
         agentID: String? = nil,
         sessionID: String? = nil
     ) {
@@ -103,7 +113,7 @@ struct IslandEvent: Identifiable {
         self.project = project
         self.source = source
         self.suggestedRule = suggestedRule
-        self.quickReplies = quickReplies
+        self.replyMode = replyMode
         self.agentID = agentID
         self.sessionID = sessionID
     }
@@ -318,10 +328,10 @@ class IslandStateManager: ObservableObject {
             let inDecision = !self.currentEventExpired
                 && (self.currentEvent?.style == .action
                     || (self.currentEvent?.style == .reminder
-                        && self.currentEvent?.quickReplies != nil))
+                        && self.currentEvent?.replyMode != nil))
             if inDecision {
                 let isDecisionEvent = event.style == .action
-                    || (event.style == .reminder && event.quickReplies != nil)
+                    || (event.style == .reminder && event.replyMode != nil)
 
                 let isSameSession = self.isSameSession(event, as: self.currentEvent)
 
@@ -355,7 +365,7 @@ class IslandStateManager: ObservableObject {
         // Action events and quick-reply reminders open expanded so the
         // user can see the decision buttons immediately. Other events
         // start compact and grow if the user clicks.
-        let needsExpanded = event.style == .action || event.quickReplies != nil
+        let needsExpanded = event.style == .action || event.replyMode != nil
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
             currentEvent = event
             mode = needsExpanded ? .expanded : .compact
@@ -402,7 +412,7 @@ class IslandStateManager: ObservableObject {
     /// quick-reply path. `nil` for events with no decision affordance.
     private func expirationTimeout(for event: IslandEvent) -> TimeInterval? {
         if event.style == .action { return 25 }
-        if event.quickReplies != nil { return StopReplyTimeoutSeconds }
+        if event.replyMode != nil { return StopReplyTimeoutSeconds }
         return nil
     }
 

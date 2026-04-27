@@ -353,6 +353,11 @@ struct RightEarView: View {
 struct ExpandedContentView: View {
     let event: IslandEvent
     @ObservedObject var stateManager: IslandStateManager
+    // TODO(settings): expose enableInlineReply in #11 settings pane.
+    // Drives whether `.freeformText` events render an `InlineReplyField`.
+    // Default false → no behavioural change for users who haven't opted in.
+    @AppStorage(enableInlineReplyKey, store: dynamicIslandUserDefaults)
+    private var inlineReplyEnabled = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -386,7 +391,7 @@ struct ExpandedContentView: View {
                 // Decision events (Allow/Deny or quick reply) need the full
                 // context to choose — let the detail scroll. Observational
                 // events keep notch's truncated default for visual density.
-                let needsFullContext = event.style == .action || event.quickReplies != nil
+                let needsFullContext = event.style == .action || event.replyMode != nil
                 DiffDetailView(text: detail, scrollable: needsFullContext)
             }
 
@@ -398,8 +403,15 @@ struct ExpandedContentView: View {
                 )
             }
 
-            if let labels = event.quickReplies {
+            switch event.replyMode {
+            case .quickReplies(let labels):
                 QuickReplyButtons(stateManager: stateManager, labels: labels, eventID: event.id)
+            case .freeformText:
+                if inlineReplyEnabled {
+                    InlineReplyField(stateManager: stateManager, eventID: event.id)
+                }
+            case .none:
+                EmptyView()
             }
 
             if let progress = event.progress {
@@ -428,7 +440,7 @@ struct ExpandedContentView: View {
             // Don't collapse while the user is mid-decision: action events
             // (Allow/Deny) and reminders with quick-reply buttons. Collapsing
             // sets a 2 s dismiss timer that strands the long-polling hook.
-            if event.style == .action || event.quickReplies != nil { return }
+            if event.style == .action || event.replyMode != nil { return }
             stateManager.collapse()
         }
     }
@@ -521,6 +533,9 @@ struct ExpandedPillView: View {
     let event: IslandEvent
     @ObservedObject var stateManager: IslandStateManager
     @State private var actionPulse = false
+    // TODO(settings): expose enableInlineReply in #11 settings pane.
+    @AppStorage(enableInlineReplyKey, store: dynamicIslandUserDefaults)
+    private var inlineReplyEnabled = false
 
     private var isPulsing: Bool { event.style.isPulsing }
 
@@ -586,8 +601,15 @@ struct ExpandedPillView: View {
                 )
             }
 
-            if let labels = event.quickReplies {
+            switch event.replyMode {
+            case .quickReplies(let labels):
                 QuickReplyButtons(stateManager: stateManager, labels: labels, eventID: event.id)
+            case .freeformText:
+                if inlineReplyEnabled {
+                    InlineReplyField(stateManager: stateManager, eventID: event.id)
+                }
+            case .none:
+                EmptyView()
             }
 
             if let progress = event.progress {
@@ -619,7 +641,7 @@ struct ExpandedPillView: View {
             // Don't collapse while the user is mid-decision: action events
             // (Allow/Deny) and reminders with quick-reply buttons. Collapsing
             // sets a 2 s dismiss timer that strands the long-polling hook.
-            if event.style == .action || event.quickReplies != nil { return }
+            if event.style == .action || event.replyMode != nil { return }
             stateManager.collapse()
         }
         .onAppear { updateActionPulse() }
@@ -1048,6 +1070,66 @@ struct QuickReplyButtons: View {
                     .foregroundColor(.white.opacity(0.55))
             }
         }
+    }
+}
+
+// MARK: - Inline Reply Field (#36, #20 Phase 2)
+
+/// Single-line text input + Send for free-form Stop replies. Dumb
+/// component — the parent decides whether to render it (gated on the
+/// `enableInlineReply` UserDefault) and feeds the eventID. Submit
+/// posts the typed string through the same `setResponse` channel
+/// quick-reply buttons use; the hook emits
+/// `decision: block + reason: <text>` so Claude treats it as the
+/// next instruction.
+struct InlineReplyField: View {
+    @ObservedObject var stateManager: IslandStateManager
+    let eventID: UUID
+    @State private var text: String = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField("Reply…", text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundColor(.white)
+                .focused($focused)
+                .onSubmit(submit)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.white.opacity(0.08))
+                )
+
+            Button(action: submit) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 22))
+                    .foregroundColor(
+                        text.trimmingCharacters(in: .whitespaces).isEmpty
+                            ? Color.white.opacity(0.3)
+                            : Color(red: 0.4, green: 0.7, blue: 1.0)
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(text.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        .onAppear {
+            // Panel uses `.nonactivatingPanel` and is not key by default,
+            // so the TextField stays visible but rejects keystrokes.
+            // Promote the panel to key + focus the field together so the
+            // first character lands without an extra click.
+            stateManager.panel?.makeKey()
+            focused = true
+        }
+    }
+
+    private func submit() {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        stateManager.server?.setResponse(trimmed, eventID: eventID)
+        stateManager.dismiss()
     }
 }
 

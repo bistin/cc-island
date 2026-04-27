@@ -385,6 +385,41 @@ final class PayloadBuilderTests: XCTestCase {
         XCTAssertNil(buildStopPayload(p)["quick_replies"])
     }
 
+    // MARK: - #36 freeform_replyable (Phase 2 dogfood gate)
+
+    func testStop_freeformReplyable_envSet_andNoYesNo_setsFlag() {
+        let p = plan([
+            "hook_event_name": "Stop",
+            "last_assistant_message": "Should I use option A or B?",
+            "cwd": "/tmp",
+        ], env: ["CC_ISLAND_INLINE_REPLY": "1"])
+        let body = buildStopPayload(p)
+        XCTAssertEqual(body["freeform_replyable"] as? Bool, true)
+        XCTAssertEqual(body["persistent"] as? Bool, true)
+        XCTAssertNil(body["quick_replies"])
+    }
+
+    func testStop_freeformReplyable_envUnset_omitsFlag() {
+        let p = plan([
+            "hook_event_name": "Stop",
+            "last_assistant_message": "Should I use option A or B?",
+            "cwd": "/tmp",
+        ])
+        let body = buildStopPayload(p)
+        XCTAssertNil(body["freeform_replyable"])
+    }
+
+    func testStop_yesNoMatch_setsQuickReplies_neverFreeform_evenWithENVSet() {
+        let p = plan([
+            "hook_event_name": "Stop",
+            "last_assistant_message": "Should I commit? yes/no",
+            "cwd": "/tmp",
+        ], env: ["CC_ISLAND_INLINE_REPLY": "1"])
+        let body = buildStopPayload(p)
+        XCTAssertEqual(body["quick_replies"] as? [String], ["Yes", "No"])
+        XCTAssertNil(body["freeform_replyable"])
+    }
+
     // MARK: - PermissionRequest with FIFO cache
 
     func testPermissionRequest_EnrichesWithCachedDiff() {
