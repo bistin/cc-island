@@ -407,10 +407,42 @@ enum HookInstaller {
         }
     }
 
+    /// Decide whether a settings entry's `command` string was written by
+    /// us, so we can distinguish our entries from a user's other tooling
+    /// (e.g. gemini-bridge.sh). Strict path comparison after stripping
+    /// env-prefix and shell quotes — substring matching like the older
+    /// implementation could pick up unrelated paths that happened to
+    /// contain `dynamic-island-hook` or the very generic `DynamicIsland`
+    /// substring.
     private static func isOurs(commandPath: String) -> Bool {
-        let markers = ["dynamic-island-hook", "island-hook.sh", "claude-hook.sh", "DynamicIsland"]
-        return markers.contains { commandPath.contains($0) }
+        Self.knownOwnedHookPaths.contains(stripCommandPrefix(commandPath))
     }
+
+    /// Canonical set of hook-binary paths we ever owned, across all
+    /// supported targets and historical layouts. Anything outside this
+    /// set is somebody else's hook and must be left alone.
+    ///
+    /// Current-binary paths are sourced from `Target.deployedHookURL`
+    /// directly so a future relayout of one of those paths can't drift
+    /// out of sync with the ownership check. Legacy bash paths from
+    /// pre-v1.5 are kept as literals — they're frozen, not derived.
+    private static let knownOwnedHookPaths: Set<String> = {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        // Copilot's `deployedHookURL` ignores its associated repoPath
+        // (the binary lives globally, each repo's config just references
+        // it). Pass a placeholder URL just to construct the case.
+        let copilotPlaceholder = URL(fileURLWithPath: "/")
+        let current = [
+            Target.claudeCode.deployedHookURL.path,
+            Target.copilot(repoPath: copilotPlaceholder).deployedHookURL.path,
+            Target.codex.deployedHookURL.path,
+        ]
+        let legacy = [
+            "\(home)/.claude/hooks/island-hook.sh",
+            "\(home)/.claude/hooks/claude-hook.sh",
+        ]
+        return Set(current + legacy)
+    }()
 
     struct SettingsParseError: LocalizedError {
         let path: String
