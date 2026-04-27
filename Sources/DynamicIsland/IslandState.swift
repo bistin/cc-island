@@ -1,3 +1,4 @@
+import DynamicIslandCore
 import Foundation
 import SwiftUI
 import IslandHookCore
@@ -76,12 +77,17 @@ struct IslandEvent: Identifiable {
     }
 
     static func sourceColor(_ source: String) -> Color? {
+        let key: String
+        let fallback: String
         switch source.lowercased() {
-        case "claude":  return Color(red: 0.85, green: 0.65, blue: 0.45) // warm orange
-        case "copilot": return Color(red: 0.65, green: 0.50, blue: 0.95) // GitHub violet
-        case "codex":   return Color(red: 0.30, green: 0.80, blue: 0.60) // OpenAI green
+        case "claude":  key = claudeColorHexKey;  fallback = defaultClaudeColorHex
+        case "copilot": key = copilotColorHexKey; fallback = defaultCopilotColorHex
+        case "codex":   key = codexColorHexKey;   fallback = defaultCodexColorHex
         default: return nil
         }
+        let hex = dynamicIslandUserDefaults.string(forKey: key) ?? fallback
+        let rgb = parseHexColor(hex) ?? parseHexColor(fallback) ?? RGB(r: 1, g: 1, b: 1)
+        return Color(red: rgb.r, green: rgb.g, blue: rgb.b)
     }
 
     init(

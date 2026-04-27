@@ -1,18 +1,38 @@
-import SwiftUI
+import AppKit
+import DynamicIslandCore
 import IslandHookCore
+import SwiftUI
 
-/// First slice of #41 (README roadmap item 11). One "General" tab with:
+/// Settings panel with three tabs (#41, #45):
 ///
-/// - Inline-reply toggle — gates Phase 2 of #20 on the app side.
-///   Hook-side env propagation requires reinstalling Claude Code hooks
-///   (helper text + button below makes this explicit, no implicit
-///   "magic" reinstall on toggle change).
-/// - Stop reply timeout — long-poll horizon on the hook side. Must be
-///   reinstalled to propagate; the same Reinstall button covers it.
-/// - Screen follower dwell — reactive at runtime, no reinstall needed.
+/// - **General** — inline-reply toggle + tunable Stop / dwell timings.
+/// - **Appearance** — source-colour palette (Claude / Copilot / Codex).
+/// - **Hooks** — per-provider auto-sync toggles + reinstall buttons.
+///
+/// All three tabs use `@AppStorage(... store: dynamicIslandUserDefaults)`
+/// for live UI binding. Hook-side propagation (env-var injection into
+/// `~/.claude/settings.json`) requires reinstalling the hooks; the Hooks
+/// tab carries the button.
 struct SettingsView: View {
     @ObservedObject var stateManager: IslandStateManager
 
+    var body: some View {
+        TabView {
+            GeneralTab()
+                .tabItem { Label("General", systemImage: "gearshape") }
+            AppearanceTab()
+                .tabItem { Label("Appearance", systemImage: "paintpalette") }
+            HooksTab()
+                .tabItem { Label("Hooks", systemImage: "link") }
+        }
+        .padding()
+        .frame(minWidth: 480, minHeight: 380)
+    }
+}
+
+// MARK: - General
+
+private struct GeneralTab: View {
     @AppStorage(enableInlineReplyKey, store: dynamicIslandUserDefaults)
     private var inlineReplyEnabled = false
 
@@ -22,17 +42,11 @@ struct SettingsView: View {
     @AppStorage(screenFollowerDwellKey, store: dynamicIslandUserDefaults)
     private var screenFollowerDwellMs: Double = 200
 
-    @State private var reinstallStatus: ReinstallStatus = .idle
-
-    enum ReinstallStatus: Equatable {
-        case idle, installed, alreadyCurrent, failed(String)
-    }
-
     var body: some View {
         Form {
             Section {
                 Toggle("Inline reply for Stop events", isOn: $inlineReplyEnabled)
-                Text("Lets you reply to Claude's free-form questions directly from the island. After toggling, click Reinstall below for the change to reach the hook.")
+                Text("Lets you reply to Claude's free-form questions directly from the island. Toggling this changes the UI immediately, but the hook side only picks it up after reinstalling Claude Code hooks (see Hooks tab).")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -55,7 +69,7 @@ struct SettingsView: View {
                     Text("seconds")
                         .foregroundColor(.secondary)
                 }
-                Text("How long the island waits for your reply before falling back to Claude's default Stop behaviour. Reinstall hooks for changes to apply.")
+                Text("How long the island waits for your reply before falling back to Claude's default Stop behaviour. Reinstall hooks to apply.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -81,30 +95,155 @@ struct SettingsView: View {
             } header: {
                 Text("Timings").font(.headline)
             }
+        }
+        .formStyle(.grouped)
+    }
+}
 
+// MARK: - Appearance
+
+private struct AppearanceTab: View {
+    @AppStorage(claudeColorHexKey, store: dynamicIslandUserDefaults)
+    private var claudeHex = defaultClaudeColorHex
+
+    @AppStorage(copilotColorHexKey, store: dynamicIslandUserDefaults)
+    private var copilotHex = defaultCopilotColorHex
+
+    @AppStorage(codexColorHexKey, store: dynamicIslandUserDefaults)
+    private var codexHex = defaultCodexColorHex
+
+    var body: some View {
+        Form {
             Section {
+                ColorPicker("Claude Code", selection: hexBinding($claudeHex), supportsOpacity: false)
+                ColorPicker("GitHub Copilot", selection: hexBinding($copilotHex), supportsOpacity: false)
+                ColorPicker("OpenAI Codex", selection: hexBinding($codexHex), supportsOpacity: false)
                 HStack {
-                    Button("Reinstall Claude Code Hooks") { reinstall() }
-                    statusLabel
                     Spacer()
+                    Button("Reset to defaults") {
+                        claudeHex = defaultClaudeColorHex
+                        copilotHex = defaultCopilotColorHex
+                        codexHex = defaultCodexColorHex
+                    }
                 }
             } header: {
-                Text("Hooks").font(.headline)
+                Text("Source colours").font(.headline)
             } footer: {
-                Text("Required after toggling Inline reply or changing Stop reply timeout — the values reach the hook process via env vars in the hook command, written into ~/.claude/settings.json on install.")
+                Text("Drives the source-tinted stripe on each ear and the project-source dot. Colour change applies to the next event the island shows.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
-        .padding()
-        .frame(minWidth: 460, minHeight: 340)
+    }
+}
+
+/// Adapter — exposes a `@Binding<String>` (a `#RRGGBB` hex stored in
+/// UserDefaults) as a `Binding<Color>` so SwiftUI's `ColorPicker` can
+/// drive it directly. Round-trips through sRGB component extraction
+/// via `NSColor` so non-sRGB picks (e.g. `Display P3` from the
+/// system colour panel) flatten cleanly.
+private func hexBinding(_ source: Binding<String>) -> Binding<Color> {
+    Binding<Color>(
+        get: {
+            let rgb = parseHexColor(source.wrappedValue) ?? RGB(r: 1, g: 1, b: 1)
+            return Color(red: rgb.r, green: rgb.g, blue: rgb.b)
+        },
+        set: { newColor in
+            let ns = NSColor(newColor).usingColorSpace(.sRGB) ?? NSColor.white
+            let rgb = RGB(
+                r: Double(ns.redComponent),
+                g: Double(ns.greenComponent),
+                b: Double(ns.blueComponent)
+            )
+            source.wrappedValue = encodeHexColor(rgb)
+        }
+    )
+}
+
+// MARK: - Hooks
+
+private struct HooksTab: View {
+    @AppStorage(autoSyncClaudeKey, store: dynamicIslandUserDefaults)
+    private var autoSyncClaude = true
+
+    @AppStorage(autoSyncCodexKey, store: dynamicIslandUserDefaults)
+    private var autoSyncCodex = true
+
+    @State private var claudeStatus = ReinstallStatus.idle
+    @State private var codexStatus = ReinstallStatus.idle
+
+    enum ReinstallStatus: Equatable {
+        case idle, installed, alreadyCurrent, failed(String)
+    }
+
+    var body: some View {
+        Form {
+            claudeSection
+            codexSection
+            copilotSection
+        }
+        .formStyle(.grouped)
     }
 
     @ViewBuilder
-    private var statusLabel: some View {
-        switch reinstallStatus {
+    private var claudeSection: some View {
+        Section {
+            Toggle("Auto-sync at launch", isOn: $autoSyncClaude)
+            Text("Re-deploys the hook binary if the bundled version changed. Off skips the launch-time check; you can still reinstall here on demand.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Reinstall Claude Code Hooks") {
+                    claudeStatus = doReinstall(target: .claudeCode, isClaude: true)
+                }
+                statusLabel(claudeStatus)
+            }
+        } header: {
+            Text("Claude Code").font(.headline)
+        }
+    }
+
+    @ViewBuilder
+    private var codexSection: some View {
+        Section {
+            Toggle("Auto-sync at launch", isOn: $autoSyncCodex)
+            Text("Only takes effect once Codex hooks have been installed (CLI: `--install-codex-hooks`). With sync on, the deployed binary is refreshed on each app launch.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Reinstall Codex Hooks") {
+                    codexStatus = doReinstall(target: .codex, isClaude: false)
+                }
+                statusLabel(codexStatus)
+            }
+        } header: {
+            Text("Codex").font(.headline)
+        }
+    }
+
+    @ViewBuilder
+    private var copilotSection: some View {
+        Section {
+            Text("Copilot hooks are scoped to a single repository. Install or update from Terminal:")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("DynamicIsland --install-copilot-hooks <repo-path>")
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(.vertical, 2)
+        } header: {
+            Text("Copilot").font(.headline)
+        }
+    }
+
+    @ViewBuilder
+    private func statusLabel(_ status: ReinstallStatus) -> some View {
+        switch status {
         case .idle:
             EmptyView()
         case .installed:
@@ -123,19 +262,21 @@ struct SettingsView: View {
         }
     }
 
-    private func reinstall() {
-        let result = HookInstaller.install(target: .claudeCode)
+    /// Fire `HookInstaller.install` and translate to a status enum. For
+    /// Claude, also flip the legacy `hookInstallChoice` UserDefault to
+    /// `installed` so the next launch's prompt path stays consistent
+    /// with what the user just confirmed via this button.
+    private func doReinstall(target: HookInstaller.Target, isClaude: Bool) -> ReinstallStatus {
+        let result = HookInstaller.install(target: target)
+        if isClaude, case .installed = result {
+            UserDefaults.standard.set("installed", forKey: "hookInstallChoice")
+        }
         switch result {
-        case .installed:
-            reinstallStatus = .installed
-        case .alreadyCurrent:
-            reinstallStatus = .alreadyCurrent
-        case .failed(let reason):
-            reinstallStatus = .failed(reason)
-        case .skipped(let message):
-            reinstallStatus = .failed(message)
-        case .removed, .notInstalled:
-            reinstallStatus = .idle
+        case .installed: return .installed
+        case .alreadyCurrent: return .alreadyCurrent
+        case .failed(let reason): return .failed(reason)
+        case .skipped(let message): return .failed(message)
+        case .removed, .notInstalled: return .idle
         }
     }
 }
