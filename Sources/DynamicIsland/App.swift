@@ -113,7 +113,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // on first close and cmd-, would break (#41 review).
     private var settingsWindowController: SettingsWindowController?
 
-    private static let hookChoiceKey = "hookInstallChoice"
+    // hookInstallChoiceKey lives at module scope (HookInstaller.swift)
+    // so SettingsView's HooksTab can share the same string.
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // #41: register UserDefaults defaults so unset reads return the
@@ -245,7 +246,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func maybePromptForHookInstall() {
-        switch UserDefaults.standard.string(forKey: Self.hookChoiceKey) {
+        switch UserDefaults.standard.string(forKey: hookInstallChoiceKey) {
         case "installed":
             // #45: gate the launch-time sync behind the per-provider
             // auto-sync UserDefault so a user can opt out from the
@@ -292,10 +293,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         switch alert.runModal() {
         case .alertFirstButtonReturn:   // Install
             let result = HookInstaller.install(target: .claudeCode)
-            UserDefaults.standard.set("installed", forKey: Self.hookChoiceKey)
+            UserDefaults.standard.set("installed", forKey: hookInstallChoiceKey)
             reportInstallResult(result, target: .claudeCode)
         case .alertThirdButtonReturn:   // Never
-            UserDefaults.standard.set("declined", forKey: Self.hookChoiceKey)
+            UserDefaults.standard.set("declined", forKey: hookInstallChoiceKey)
         default:                        // Skip — ask again next launch
             break
         }

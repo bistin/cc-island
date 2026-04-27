@@ -26,7 +26,7 @@ struct SettingsView: View {
                 .tabItem { Label("Hooks", systemImage: "link") }
         }
         .padding()
-        .frame(minWidth: 480, minHeight: 380)
+        .frame(minWidth: 480, minHeight: 440)
     }
 }
 
@@ -269,7 +269,7 @@ private struct HooksTab: View {
     private func doReinstall(target: HookInstaller.Target, isClaude: Bool) -> ReinstallStatus {
         let result = HookInstaller.install(target: target)
         if isClaude, case .installed = result {
-            UserDefaults.standard.set("installed", forKey: "hookInstallChoice")
+            UserDefaults.standard.set("installed", forKey: hookInstallChoiceKey)
         }
         switch result {
         case .installed: return .installed

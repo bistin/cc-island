@@ -71,6 +71,14 @@ let autoSyncClaudeKey = "autoSyncClaudeOnLaunch"
 let autoSyncCopilotKey = "autoSyncCopilotOnLaunch"
 let autoSyncCodexKey = "autoSyncCodexOnLaunch"
 
+/// UserDefaults String key for the first-launch install-prompt choice.
+/// Lives on `UserDefaults.standard` (legacy from before
+/// `dynamicIslandUserDefaults` existed). Read by
+/// `AppDelegate.maybePromptForHookInstall`, written by both that path
+/// and `SettingsView.HooksTab` so a manual reinstall counts as
+/// implicit acceptance of the prompt.
+let hookInstallChoiceKey = "hookInstallChoice"
+
 /// Read a positive `Double` UserDefault, falling back to `defaultValue`
 /// when the key is unset, malformed, or `<= 0`.
 ///
