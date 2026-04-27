@@ -12,6 +12,11 @@ public struct HookPlan {
     public let displayProject: String   // project OR "↳ agent_type" for subagents
     public let agentId: String?
     public let agentType: String?
+    /// Claude Code session UUID from the hook payload (`session_id`).
+    /// Used to scope the PreToolUse → PermissionRequest context cache
+    /// per session so two parallel sessions in the same project don't
+    /// clobber each other's cached `tool_input`.
+    public let sessionID: String?
     public let toolInput: [String: Any]
     public let copilotToolArgs: [String: Any]
     public let cpError: String?         // Copilot .error.message for Error events
@@ -33,6 +38,7 @@ public struct HookPlan {
         payload: [String: Any], source: String, event: String, tool: String,
         cwd: String, project: String, displayProject: String,
         agentId: String?, agentType: String?,
+        sessionID: String? = nil,
         toolInput: [String: Any], copilotToolArgs: [String: Any],
         cpError: String?,
         inlineReplyEnabled: Bool = false,
@@ -47,6 +53,7 @@ public struct HookPlan {
         self.displayProject = displayProject
         self.agentId = agentId
         self.agentType = agentType
+        self.sessionID = sessionID
         self.toolInput = toolInput
         self.copilotToolArgs = copilotToolArgs
         self.cpError = cpError
@@ -117,6 +124,7 @@ public func parseHookPlan(payload: [String: Any], env: [String: String] = [:]) -
     let project = cwd.isEmpty ? "" : (cwd as NSString).lastPathComponent
     let agentId = payload["agent_id"] as? String
     let agentType = payload["agent_type"] as? String
+    let sessionID = payload["session_id"] as? String
     let hasAgent = !(agentId ?? "").isEmpty && !(agentType ?? "").isEmpty
     let displayProject = hasAgent ? "↳ \(agentType!)" : project
 
@@ -147,6 +155,7 @@ public func parseHookPlan(payload: [String: Any], env: [String: String] = [:]) -
         payload: payload, source: source, event: event, tool: tool,
         cwd: cwd, project: project, displayProject: displayProject,
         agentId: agentId, agentType: agentType,
+        sessionID: sessionID,
         toolInput: toolInput, copilotToolArgs: copilotToolArgs,
         cpError: cpError,
         inlineReplyEnabled: env["CC_ISLAND_INLINE_REPLY"] == "1",

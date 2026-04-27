@@ -72,7 +72,7 @@ The matcher in `settings.json` intentionally limits `PermissionRequest` to risky
 
 ### FIFO context correlation
 
-`PreToolUse` for Edit/Write/Bash/MultiEdit/NotebookEdit caches its full payload to `/tmp/di_pretool_${PROJECT}.json`. The next `PermissionRequest` reads it to enrich the dialog: Edit/MultiEdit shows a colored diff (red `-` / green `+`), Write shows a content preview, Bash backfills the command/description if `tool_input` arrived empty. Keyed by project name, single-slot (the next PreToolUse overwrites) — works because PreToolUse and PermissionRequest fire serially per Claude session.
+`PreToolUse` for Edit/Write/Bash/MultiEdit/NotebookEdit caches its full payload under `~/Library/Caches/cc-island/pretool/<key>.json`. The next `PermissionRequest` reads it to enrich the dialog: Edit/MultiEdit shows a colored diff (red `-` / green `+`), Write shows a content preview, Bash backfills the command/description if `tool_input` arrived empty. Single-slot per key (the next PreToolUse overwrites) — works because PreToolUse and PermissionRequest fire serially per session. Key resolves via `IslandHookCore.preToolCacheKey`: `session_id` first, then `agent-<agentId>-<project>` for subagents, then `<project>`, then `default`. Pre-v1.7.x layout was `/tmp/di_pretool_${PROJECT}.json` — the old path is world-readable on multi-user machines and predictable across processes, so the cache moved into the per-user `~/Library/Caches/` tree.
 
 ## Conventions
 
