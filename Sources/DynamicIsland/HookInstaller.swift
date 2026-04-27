@@ -1,14 +1,34 @@
 import DynamicIslandCore
 import Foundation
 
-/// Shared UserDefaults store for app-wide preferences. Pinned to the
-/// bundle id explicitly so SPM-built binaries (CLI invocations like
-/// `--install-hooks`, debug GUI launches from `.build/debug/`) read
-/// the same plist as the production `.app` bundle. Without this,
-/// `UserDefaults.standard` resolves to a different domain when
-/// `Bundle.main.bundleIdentifier` is nil (no embedded Info.plist).
-let dynamicIslandUserDefaults: UserDefaults =
-    UserDefaults(suiteName: "com.bistin.dynamic-island") ?? .standard
+/// Shared UserDefaults store for app-wide preferences.
+///
+/// Resolution order:
+/// 1. `Bundle.main.bundleIdentifier` — the production `.app` always
+///    has this from `Info.plist`. Forks that change the bundle id pick
+///    up the new value automatically here, no source edit needed.
+/// 2. `com.cc-island.dynamic-island` fallback — used when
+///    `Bundle.main.bundleIdentifier` is nil, which happens for
+///    SwiftPM-built executables (CLI `--install-hooks`, debug GUI
+///    launches from `.build/debug/`). Without a fallback,
+///    `UserDefaults.standard` would resolve to an unrelated domain
+///    and the dogfood flag would silently disagree across processes.
+/// 3. `.standard` — last resort if `UserDefaults(suiteName:)` itself
+///    fails for some reason.
+///
+/// For forks running their own SPM CLI build, the (2) fallback won't
+/// match their bundle id, so dogfood toggles via `defaults write
+/// <fork.id> enableInlineReply` won't surface in a bare CLI run; the
+/// `.app` build path keeps working because (1) wins. Practically
+/// non-issue unless a fork dogfoods the inline reply flag through
+/// `--install-hooks` directly.
+let dynamicIslandUserDefaults: UserDefaults = {
+    if let id = Bundle.main.bundleIdentifier,
+       let store = UserDefaults(suiteName: id) {
+        return store
+    }
+    return UserDefaults(suiteName: "com.cc-island.dynamic-island") ?? .standard
+}()
 
 /// UserDefaults key gating Phase 2 inline-reply UI (#36). Same string
 /// referenced by `@AppStorage` in `ExpandedContentView` /
