@@ -176,4 +176,32 @@ final class HookPlanTests: XCTestCase {
             XCTAssertFalse(plan?.shouldCachePreToolUse ?? true, "\(tool) should not cache")
         }
     }
+
+    // MARK: - inlineReplyEnabled (#36 dogfood gate)
+
+    func testInlineReplyEnabled_envSet_isTrue() {
+        let plan = parseHookPlan(
+            payload: ["hook_event_name": "Stop", "cwd": "/tmp"],
+            env: ["CC_ISLAND_INLINE_REPLY": "1"]
+        )
+        XCTAssertEqual(plan?.inlineReplyEnabled, true)
+    }
+
+    func testInlineReplyEnabled_envUnset_isFalse() {
+        let plan = parseHookPlan(
+            payload: ["hook_event_name": "Stop", "cwd": "/tmp"]
+        )
+        XCTAssertEqual(plan?.inlineReplyEnabled, false)
+    }
+
+    func testInlineReplyEnabled_envNotExactlyOne_isFalse() {
+        // Only "1" enables — "true", "yes", "0" do not.
+        for raw in ["true", "yes", "0", ""] {
+            let plan = parseHookPlan(
+                payload: ["hook_event_name": "Stop", "cwd": "/tmp"],
+                env: ["CC_ISLAND_INLINE_REPLY": raw]
+            )
+            XCTAssertEqual(plan?.inlineReplyEnabled, false, "value \(raw) should not enable")
+        }
+    }
 }

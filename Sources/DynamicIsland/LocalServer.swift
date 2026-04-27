@@ -353,19 +353,28 @@ class LocalServer {
             suggestedRule = PermissionRuleSuggestion(toolName: toolName, ruleContent: ruleContent)
         }
 
-        // #20 Phase 1: quick-reply button labels. Cap at 3 entries / 20
-        // chars per label so the button row fits whichever expanded view
-        // renders it (notch ~445 pt, capsule 420 pt). Non-string entries
-        // are dropped silently.
-        var quickReplies: [String]? = nil
+        // #20 reply UI gate. Quick-reply button labels (Phase 1, #29):
+        // cap at 3 entries / 20 chars per label so the button row fits
+        // whichever expanded view renders it (notch ~445 pt, capsule
+        // 420 pt). Non-string entries dropped silently. Free-form
+        // (Phase 2, #36) is signalled by an explicit
+        // `freeform_replyable: true` — never inferred from
+        // `style == .reminder` or presence of `event_id`, so a manual
+        // `curl` reminder doesn't accidentally render a TextField with
+        // no hook on the other end. Quick replies win when both are
+        // somehow present.
+        var replyMode: ReplyMode? = nil
         if let raw = json["quick_replies"] as? [Any] {
             let labels = raw
                 .compactMap { $0 as? String }
                 .map { String($0.prefix(20)) }
                 .prefix(3)
             if !labels.isEmpty {
-                quickReplies = Array(labels)
+                replyMode = .quickReplies(Array(labels))
             }
+        }
+        if replyMode == nil, json["freeform_replyable"] as? Bool == true {
+            replyMode = .freeformText
         }
 
         // Adopt the hook's event_id so the UI's setResponse poll can be
@@ -387,7 +396,7 @@ class LocalServer {
             project: project,
             source: source,
             suggestedRule: suggestedRule,
-            quickReplies: quickReplies,
+            replyMode: replyMode,
             agentID: agentIDValue,
             sessionID: sessionIDValue
         )

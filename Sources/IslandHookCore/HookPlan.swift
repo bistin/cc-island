@@ -15,13 +15,20 @@ public struct HookPlan {
     public let toolInput: [String: Any]
     public let copilotToolArgs: [String: Any]
     public let cpError: String?         // Copilot .error.message for Error events
+    /// True when the hook process was launched with
+    /// `CC_ISLAND_INLINE_REPLY=1`. Drives whether `buildStopPayload`
+    /// surfaces a `freeform_replyable: true` for non-yes/no Stop
+    /// questions (#36 dogfood gate). The matching app-side flag is
+    /// `UserDefaults.enableInlineReply`; both must be set.
+    public let inlineReplyEnabled: Bool
 
     public init(
         payload: [String: Any], source: String, event: String, tool: String,
         cwd: String, project: String, displayProject: String,
         agentId: String?, agentType: String?,
         toolInput: [String: Any], copilotToolArgs: [String: Any],
-        cpError: String?
+        cpError: String?,
+        inlineReplyEnabled: Bool = false
     ) {
         self.payload = payload
         self.source = source
@@ -35,6 +42,7 @@ public struct HookPlan {
         self.toolInput = toolInput
         self.copilotToolArgs = copilotToolArgs
         self.cpError = cpError
+        self.inlineReplyEnabled = inlineReplyEnabled
     }
 }
 
@@ -118,7 +126,8 @@ public func parseHookPlan(payload: [String: Any], env: [String: String] = [:]) -
         cwd: cwd, project: project, displayProject: displayProject,
         agentId: agentId, agentType: agentType,
         toolInput: toolInput, copilotToolArgs: copilotToolArgs,
-        cpError: cpError
+        cpError: cpError,
+        inlineReplyEnabled: env["CC_ISLAND_INLINE_REPLY"] == "1"
     )
 }
 

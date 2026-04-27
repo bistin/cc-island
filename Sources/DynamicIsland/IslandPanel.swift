@@ -3,6 +3,14 @@ import Combine
 import SwiftUI
 
 class IslandPanel: NSPanel {
+    /// Override `NSPanel`'s default `false` so the panel can receive
+    /// keyboard input (e.g. inline reply TextField, #36). The
+    /// `.nonactivatingPanel` style keeps clicking the panel from
+    /// activating the host app — this only changes whether keystrokes
+    /// reach focused controls inside the panel. With this off, `TextField`
+    /// inside the expanded view stayed visible but never became
+    /// first-responder.
+    override var canBecomeKey: Bool { true }
     let stateManager: IslandStateManager
     private var cancellables: Set<AnyCancellable> = []
     private var pulsePanel: PulseWindow?

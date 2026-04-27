@@ -232,6 +232,14 @@ public func buildStopPayload(_ plan: HookPlan) -> [String: Any] {
         if let options = extractYesNoOptions(from: lastMsg) {
             p["quick_replies"] = options
             p["persistent"] = true
+        } else if plan.inlineReplyEnabled {
+            // Phase 2 of #20 (#36): question without a yes/no shape +
+            // dogfood gate enabled → app renders a free-form TextField.
+            // Hook side will long-poll on this signal, same way as
+            // quick_replies. Default-off (no env, no flag): omit the
+            // field, hook does not long-poll, behaviour unchanged.
+            p["freeform_replyable"] = true
+            p["persistent"] = true
         }
         return plan.decorate(p)
     } else {
