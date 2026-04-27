@@ -356,7 +356,7 @@ struct ExpandedContentView: View {
     // TODO(settings): expose enableInlineReply in #11 settings pane.
     // Drives whether `.freeformText` events render an `InlineReplyField`.
     // Default false → no behavioural change for users who haven't opted in.
-    @AppStorage("enableInlineReply", store: dynamicIslandUserDefaults)
+    @AppStorage(enableInlineReplyKey, store: dynamicIslandUserDefaults)
     private var inlineReplyEnabled = false
 
     var body: some View {
@@ -534,7 +534,7 @@ struct ExpandedPillView: View {
     @ObservedObject var stateManager: IslandStateManager
     @State private var actionPulse = false
     // TODO(settings): expose enableInlineReply in #11 settings pane.
-    @AppStorage("enableInlineReply", store: dynamicIslandUserDefaults)
+    @AppStorage(enableInlineReplyKey, store: dynamicIslandUserDefaults)
     private var inlineReplyEnabled = false
 
     private var isPulsing: Bool { event.style.isPulsing }

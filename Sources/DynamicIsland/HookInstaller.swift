@@ -10,6 +10,13 @@ import Foundation
 let dynamicIslandUserDefaults: UserDefaults =
     UserDefaults(suiteName: "com.bistin.dynamic-island") ?? .standard
 
+/// UserDefaults key gating Phase 2 inline-reply UI (#36). Same string
+/// referenced by `@AppStorage` in `ExpandedContentView` /
+/// `ExpandedPillView`, by `HookInstaller.commandString` to decide
+/// whether to inject the env var, and by `IslandPanel.canBecomeKey`
+/// to allow keyboard focus only when a reply field is on screen.
+let enableInlineReplyKey = "enableInlineReply"
+
 /// Deploys the bundled `island-hook` binary and registers hook events for
 /// Claude Code (`~/.claude/settings.json`), GitHub Copilot
 /// (`{repo}/.github/hooks/hooks.json`), or OpenAI Codex (`~/.codex/hooks.json`).
@@ -86,21 +93,24 @@ enum HookInstaller {
         fileprivate func commandString(for path: String) -> String {
             switch self {
             case .claudeCode:
+                // Always shell-quote so paths with spaces survive (e.g. if
+                // the user moves `~/.claude/hooks/` into a directory with
+                // whitespace). `currentlyInSync` byte-compares the
+                // generated command, so this also makes the on-disk shape
+                // canonical regardless of dogfood gate.
+                let quoted = shellQuote(path)
                 // #36 dogfood gate: when the user has flipped
-                // `enableInlineReply` (via `defaults write`) and triggers
-                // a hook reinstall, every Claude hook command picks up
-                // the env var. The env only matters to the `Stop` event
+                // `enableInlineReplyKey` (via `defaults write`) and triggers
+                // a hook reinstall, every Claude hook command picks up the
+                // env var. The env only matters to the `Stop` event
                 // (PayloadBuilder reads it into `HookPlan.inlineReplyEnabled`
                 // → emits `freeform_replyable: true` + long-polls); leaving
                 // it on the other commands is harmless and keeps the
                 // install diff to a single command-string accessor.
-                // `currentlyInSync` byte-compares the generated command
-                // against the on-disk command, so flag flips trigger a
-                // redeploy on the next install path naturally.
-                if dynamicIslandUserDefaults.bool(forKey: "enableInlineReply") {
-                    return "CC_ISLAND_INLINE_REPLY=1 \(shellQuote(path))"
+                if dynamicIslandUserDefaults.bool(forKey: enableInlineReplyKey) {
+                    return "CC_ISLAND_INLINE_REPLY=1 \(quoted)"
                 }
-                return path
+                return quoted
             case .copilot:
                 return path
             case .codex:
