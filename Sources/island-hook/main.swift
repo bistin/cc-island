@@ -81,14 +81,22 @@ func longPollResponse(timeoutSeconds: TimeInterval) -> PermissionDecision {
 
 // MARK: - FIFO context cache
 
-let contextFile = "/tmp/di_pretool_\(plan.project.isEmpty ? "default" : plan.project).json"
+// Per-user cache instead of `/tmp/di_pretool_<project>.json`. Keyed
+// by `session_id` (Claude) → `agent-<id>-<project>` → `<project>` →
+// `default`, so two parallel sessions in the same project don't
+// overwrite each other's context. See `IslandHookCore.PreToolCache`.
+let contextURL = preToolCacheURL(key: preToolCacheKey(plan: plan))
 
 func writeContextCache() {
-    try? inputData.write(to: URL(fileURLWithPath: contextFile))
+    try? FileManager.default.createDirectory(
+        at: contextURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    try? inputData.write(to: contextURL)
 }
 
 func readCachedToolInput() -> (toolName: String, input: [String: Any])? {
-    guard let data = try? Data(contentsOf: URL(fileURLWithPath: contextFile)),
+    guard let data = try? Data(contentsOf: contextURL),
           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
         return nil
     }
