@@ -287,77 +287,55 @@ class IslandStateManager: ObservableObject {
             // we show the new event. No-op if already there.
             self.panel?.relocateToCursorScreen()
 
-            // In-place progress update: same title + both carry progress →
-            // swap the event without re-animating entry or touching mode.
-            // Preserves user's expanded/compact choice across updates.
-            if let current = self.currentEvent,
-               current.title == event.title,
-               current.progress != nil,
-               event.progress != nil {
-                let merged = IslandEvent(
-                    id: current.id,
-                    icon: event.icon,
-                    title: event.title,
-                    subtitle: event.subtitle,
-                    style: event.style,
-                    duration: event.duration,
-                    detail: event.detail,
-                    progress: event.progress,
-                    persistent: event.persistent,
-                    project: event.project,
-                    source: event.source,
-                    suggestedRule: event.suggestedRule
-                )
-                self.currentEvent = merged
-                if !event.persistent {
-                    self.dismissTimer?.invalidate()
-                    self.dismissTimer = Timer.scheduledTimer(withTimeInterval: event.duration, repeats: false) { [weak self] _ in
-                        DispatchQueue.main.async {
-                            guard let self, !self.isHovered else { return }
-                            self.dismiss()
-                        }
-                    }
-                }
+            // Decision logic (progress merge, decision-guard queueing,
+            // expired-release, same-session takeover) lives in a pure
+            // helper so it's unit-testable. See `EventDisposition`.
+            let disposition = decideEventDisposition(
+                current: self.currentEvent?.dispositionSnapshot,
+                currentExpired: self.currentEventExpired,
+                incoming: event.dispositionSnapshot
+            )
+            switch disposition {
+            case .mergeProgress:
+                self.mergeProgress(into: event)
+            case .queueAsAction:
+                self.pendingActions.append(event)
+            case .dropTransient:
                 return
+            case .showImmediately:
+                self.showEvent(event)
             }
+        }
+    }
 
-            // Guard: while the user is mid-decision, don't overwrite. Two
-            // shapes count as "mid-decision":
-            //   - .action with Allow/Deny (#28's PermissionRequest)
-            //   - .reminder with quick-reply buttons (#20 Phase 1 Stop reply)
-            // Both have a hook waiting on `/response`; clobbering the event
-            // strands the hook in a 25-30 s timeout. Queue another such
-            // event; drop transient pings from *other* sessions. Once
-            // `currentEventExpired` flips, the hook is gone — release the
-            // lock so any new event can take over instead of leaving a
-            // frozen ghost on screen (#31).
-            let inDecision = !self.currentEventExpired
-                && (self.currentEvent?.style == .action
-                    || (self.currentEvent?.style == .reminder
-                        && self.currentEvent?.replyMode != nil))
-            if inDecision {
-                let isDecisionEvent = event.style == .action
-                    || (event.style == .reminder && event.replyMode != nil)
-
-                let isSameSession = self.isSameSession(event, as: self.currentEvent)
-
-                // Same-session escape hatch: if the current event came from
-                // session X and a non-decision event from the same session
-                // arrives, the user already answered on the terminal side
-                // (Claude moved on to PreToolUse / PostToolUse). Release the
-                // lock so the new event takes over immediately rather than
-                // waiting out the hook timeout.
-                if !isDecisionEvent && isSameSession {
-                    // fall through to showEvent
-                } else if isDecisionEvent {
-                    self.pendingActions.append(event)
-                    return
-                } else {
-                    return // other-session transient: keep protecting
+    /// Same-title progress update: swap the event in place without
+    /// re-animating entry or touching mode. Preserves the user's
+    /// expanded / compact choice across rapid progress ticks.
+    private func mergeProgress(into event: IslandEvent) {
+        guard let current = self.currentEvent else { return }
+        let merged = IslandEvent(
+            id: current.id,
+            icon: event.icon,
+            title: event.title,
+            subtitle: event.subtitle,
+            style: event.style,
+            duration: event.duration,
+            detail: event.detail,
+            progress: event.progress,
+            persistent: event.persistent,
+            project: event.project,
+            source: event.source,
+            suggestedRule: event.suggestedRule
+        )
+        self.currentEvent = merged
+        if !event.persistent {
+            self.dismissTimer?.invalidate()
+            self.dismissTimer = Timer.scheduledTimer(withTimeInterval: event.duration, repeats: false) { [weak self] _ in
+                DispatchQueue.main.async {
+                    guard let self, !self.isHovered else { return }
+                    self.dismiss()
                 }
             }
-
-            self.showEvent(event)
         }
     }
 
@@ -420,17 +398,6 @@ class IslandStateManager: ObservableObject {
         if event.style == .action { return 25 }
         if event.replyMode != nil { return StopReplyTimeoutSeconds }
         return nil
-    }
-
-    /// Two events are "same session" when they share Claude's session UUID,
-    /// or when both lack one but agree on (project, agentID). Lets us
-    /// detect that the user resolved a permission/stop prompt on the
-    /// terminal side — the next non-decision event from that session is
-    /// our cue to release the lock and dismiss the stale pill.
-    private func isSameSession(_ a: IslandEvent, as b: IslandEvent?) -> Bool {
-        guard let b else { return false }
-        if let sa = a.sessionID, let sb = b.sessionID { return sa == sb }
-        return a.project == b.project && a.agentID == b.agentID
     }
 
     func expand() {
@@ -554,5 +521,37 @@ class IslandStateManager: ObservableObject {
                 }
             }
         }
+    }
+}
+
+// MARK: - Disposition snapshot bridge
+
+extension EventStyle {
+    /// Map the full SwiftUI-coupled `EventStyle` enum to the coarse
+    /// shape `EventDisposition` cares about: action, reminder, or
+    /// other (transient).
+    var dispositionShape: EventStyleShape {
+        switch self {
+        case .action: return .action
+        case .reminder: return .reminder
+        default: return .other
+        }
+    }
+}
+
+extension IslandEvent {
+    /// Project the fields `decideEventDisposition` reads into a pure
+    /// `EventSnapshot` that lives in `DynamicIslandCore`. Lets the
+    /// dispatch logic stay testable without coupling to SwiftUI.
+    var dispositionSnapshot: EventSnapshot {
+        EventSnapshot(
+            title: title,
+            style: style.dispositionShape,
+            hasReplyMode: replyMode != nil,
+            hasProgress: progress != nil,
+            sessionID: sessionID,
+            agentID: agentID,
+            project: project
+        )
     }
 }
