@@ -113,7 +113,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // on first close and cmd-, would break (#41 review).
     private var settingsWindowController: SettingsWindowController?
 
-    private static let hookChoiceKey = "hookInstallChoice"
+    // hookInstallChoiceKey lives at module scope (HookInstaller.swift)
+    // so SettingsView's HooksTab can share the same string.
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // #41: register UserDefaults defaults so unset reads return the
@@ -124,6 +125,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         dynamicIslandUserDefaults.register(defaults: [
             stopReplyTimeoutKey: StopReplyTimeoutSeconds,
             screenFollowerDwellKey: 200.0,
+            // #45: source colours, default to today's hardcoded palette
+            claudeColorHexKey: defaultClaudeColorHex,
+            copilotColorHexKey: defaultCopilotColorHex,
+            codexColorHexKey: defaultCodexColorHex,
+            // #45: per-provider auto-sync at launch. Defaults match
+            // pre-#45 behaviour (Claude on, Codex on, Copilot off).
+            autoSyncClaudeKey: true,
+            autoSyncCodexKey: true,
+            autoSyncCopilotKey: false,
         ])
 
         panel = IslandPanel(stateManager: stateManager)
@@ -191,15 +201,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         settings.keyEquivalentModifierMask = [.command]
         menu.addItem(settings)
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(
-            title: "Reinstall Claude Code Hooks",
-            action: #selector(reinstallHooks),
-            keyEquivalent: ""))
-        menu.addItem(NSMenuItem(
-            title: "Reinstall Codex Hooks",
-            action: #selector(reinstallCodexHooks),
-            keyEquivalent: ""))
-        menu.addItem(.separator())
         let quit = NSMenuItem(
             title: "Quit Dynamic Island",
             action: #selector(NSApplication.terminate(_:)),
@@ -244,33 +245,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindowController?.present()
     }
 
-    @objc private func reinstallHooks() {
-        let result = HookInstaller.install(target: .claudeCode)
-        reportInstallResult(result, target: .claudeCode)
-        if case .installed = result {
-            UserDefaults.standard.set("installed", forKey: Self.hookChoiceKey)
-        }
-    }
-
-    @objc private func reinstallCodexHooks() {
-        let result = HookInstaller.install(target: .codex)
-        reportInstallResult(result, target: .codex)
-    }
-
     private func maybePromptForHookInstall() {
-        switch UserDefaults.standard.string(forKey: Self.hookChoiceKey) {
+        switch UserDefaults.standard.string(forKey: hookInstallChoiceKey) {
         case "installed":
-            _ = HookInstaller.syncIfOutdated(target: .claudeCode)
+            // #45: gate the launch-time sync behind the per-provider
+            // auto-sync UserDefault so a user can opt out from the
+            // Settings panel.
+            if dynamicIslandUserDefaults.bool(forKey: autoSyncClaudeKey) {
+                _ = HookInstaller.syncIfOutdated(target: .claudeCode)
+            }
         case "declined":
             break
         default:
             showInstallPrompt()
         }
 
-        // Codex hooks are installed explicitly via CLI/menu, but once present
-        // they need the same binary drift repair as Claude hooks after app
-        // upgrades.
-        if HookInstaller.hasExistingInstall(target: .codex) {
+        // Codex hooks are installed explicitly via CLI/menu, but once
+        // present they need the same binary drift repair as Claude
+        // hooks after app upgrades. Same per-provider gate.
+        if HookInstaller.hasExistingInstall(target: .codex),
+           dynamicIslandUserDefaults.bool(forKey: autoSyncCodexKey) {
             _ = HookInstaller.syncIfOutdated(target: .codex)
         }
     }
@@ -299,10 +293,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         switch alert.runModal() {
         case .alertFirstButtonReturn:   // Install
             let result = HookInstaller.install(target: .claudeCode)
-            UserDefaults.standard.set("installed", forKey: Self.hookChoiceKey)
+            UserDefaults.standard.set("installed", forKey: hookInstallChoiceKey)
             reportInstallResult(result, target: .claudeCode)
         case .alertThirdButtonReturn:   // Never
-            UserDefaults.standard.set("declined", forKey: Self.hookChoiceKey)
+            UserDefaults.standard.set("declined", forKey: hookInstallChoiceKey)
         default:                        // Skip — ask again next launch
             break
         }

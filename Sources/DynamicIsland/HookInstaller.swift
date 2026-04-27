@@ -49,6 +49,36 @@ let stopReplyTimeoutKey = "stopReplyTimeoutSeconds"
 /// move. Default `200`.
 let screenFollowerDwellKey = "screenFollowerDwellMilliseconds"
 
+/// UserDefaults keys for the source colour palette (#45). Stored as
+/// `#RRGGBB` hex strings so they survive plist round-trips without a
+/// custom codable adapter. Read by `IslandEvent.sourceColor(_:)` and
+/// bound to `ColorPicker`s in `SettingsView` via a hex/Color binding.
+/// Defaults match the v1.0 hardcoded palette.
+let claudeColorHexKey = "claudeColorHex"
+let copilotColorHexKey = "copilotColorHex"
+let codexColorHexKey = "codexColorHex"
+let defaultClaudeColorHex = "#D9A673"   // warm orange
+let defaultCopilotColorHex = "#A680F2"  // GitHub violet
+let defaultCodexColorHex = "#4CCC99"    // OpenAI green
+
+/// UserDefaults Bool keys for per-provider auto-sync at launch (#45).
+/// Drive whether `applicationDidFinishLaunching` calls
+/// `HookInstaller.syncIfOutdated(target:)` for each target. Defaults
+/// match today's behaviour: Claude on (provided the install prompt
+/// has been answered), Codex on (only if already installed via CLI),
+/// Copilot off (per-repo, no global sync notion).
+let autoSyncClaudeKey = "autoSyncClaudeOnLaunch"
+let autoSyncCopilotKey = "autoSyncCopilotOnLaunch"
+let autoSyncCodexKey = "autoSyncCodexOnLaunch"
+
+/// UserDefaults String key for the first-launch install-prompt choice.
+/// Lives on `UserDefaults.standard` (legacy from before
+/// `dynamicIslandUserDefaults` existed). Read by
+/// `AppDelegate.maybePromptForHookInstall`, written by both that path
+/// and `SettingsView.HooksTab` so a manual reinstall counts as
+/// implicit acceptance of the prompt.
+let hookInstallChoiceKey = "hookInstallChoice"
+
 /// Read a positive `Double` UserDefault, falling back to `defaultValue`
 /// when the key is unset, malformed, or `<= 0`.
 ///
