@@ -346,34 +346,20 @@ class LocalServer {
             icon = Self.iconForType(type)
         }
 
-        var suggestedRule: PermissionRuleSuggestion? = nil
-        if let dict = json["suggested_rule"] as? [String: Any],
-           let toolName = dict["toolName"] as? String,
-           let ruleContent = dict["ruleContent"] as? String {
-            suggestedRule = PermissionRuleSuggestion(toolName: toolName, ruleContent: ruleContent)
-        }
+        // Sub-decoders below live in `DynamicIslandCore` so the
+        // parsing rules (3-cap / 20-char trim / strict freeform_replyable
+        // / suggested-rule shape) are unit-testable without spinning up
+        // the full LocalServer pipeline. See `EventDecoder.swift`.
+        let suggestedRule: PermissionRuleSuggestion? = decodeSuggestedRuleFields(from: json)
+            .map { PermissionRuleSuggestion(toolName: $0.toolName, ruleContent: $0.ruleContent) }
 
-        // #20 reply UI gate. Quick-reply button labels (Phase 1, #29):
-        // cap at 3 entries / 20 chars per label so the button row fits
-        // whichever expanded view renders it (notch ~445 pt, capsule
-        // 420 pt). Non-string entries dropped silently. Free-form
-        // (Phase 2, #36) is signalled by an explicit
-        // `freeform_replyable: true` — never inferred from
-        // `style == .reminder` or presence of `event_id`, so a manual
-        // `curl` reminder doesn't accidentally render a TextField with
-        // no hook on the other end. Quick replies win when both are
-        // somehow present.
+        // Quick replies win when both signals are somehow present —
+        // matches the original guard order so `quick_replies + freeform_replyable`
+        // both set still renders buttons.
         var replyMode: ReplyMode? = nil
-        if let raw = json["quick_replies"] as? [Any] {
-            let labels = raw
-                .compactMap { $0 as? String }
-                .map { String($0.prefix(20)) }
-                .prefix(3)
-            if !labels.isEmpty {
-                replyMode = .quickReplies(Array(labels))
-            }
-        }
-        if replyMode == nil, json["freeform_replyable"] as? Bool == true {
+        if let labels = decodeQuickReplies(from: json["quick_replies"]) {
+            replyMode = .quickReplies(labels)
+        } else if decodeFreeformReplyable(from: json["freeform_replyable"]) {
             replyMode = .freeformText
         }
 
