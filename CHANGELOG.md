@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-05-04
+
+### Added
+- **Settings panel — Appearance and Hooks tabs.** Extends the
+  General tab shipped in v1.7.0 with two more:
+  - **Appearance**: 3 `ColorPicker`s for source colours
+    (Claude / Copilot / Codex), backed by hex-string UserDefaults
+    (`claudeColorHex` / `copilotColorHex` / `codexColorHex`).
+    Defaults match the v1.0 palette so untouched users see no
+    change. Reset button restores defaults. Reactive — the next
+    event uses the new colour without an app restart.
+  - **Hooks**: per-provider auto-sync toggles + Reinstall buttons
+    for Claude and Codex. Copilot section explains the per-repo
+    CLI install. Defaults: Claude on, Codex on, Copilot off.
+  - Menu bar simplifies to Settings… + Quit; the old "Reinstall …
+    Hooks" items move into the Hooks tab.
+  ([#46](https://github.com/bistin/cc-island/pull/46))
+
+### Changed
+- **PreToolUse context cache moved out of `/tmp`.** The path used
+  for FIFO context correlation between `PreToolUse` and
+  `PermissionRequest` was `/tmp/di_pretool_<project>.json` since
+  v1.5 — world-readable on a multi-user machine and predictable
+  across processes. Now lives under
+  `~/Library/Caches/cc-island/pretool/<key>.json`, keyed by
+  `session_id` (preferred) / `agent-<id>-<project>` /
+  `<project>` / `default`. Atomic write so a mid-write crash
+  can't truncate the next read. Old `/tmp` files don't migrate —
+  they were transient anyway.
+  ([#44](https://github.com/bistin/cc-island/pull/44))
+- **Hook-ownership detection tightened.** `HookInstaller.isOurs`
+  no longer matches the generic `DynamicIsland` substring, which
+  could in theory misclassify an unrelated tool whose path
+  contains it. Strict equality against a known-paths set, after
+  stripping shell quotes and env-var prefixes via a new
+  testable `stripCommandPrefix` helper.
+  ([#43](https://github.com/bistin/cc-island/pull/43))
+- **Internal refactor — extracted event logic + split
+  `IslandView.swift`.** Pure decision-guard
+  (`decideEventDisposition`) and JSON sub-decoders
+  (`decodeQuickReplies` / `decodeFreeformReplyable` /
+  `decodeSuggestedRuleFields`) carved out of
+  `IslandStateManager.pushEvent` and `LocalServer.processEvent`
+  into `DynamicIslandCore` with **33 new unit tests** (217 total).
+  `IslandView.swift` 1183 → 117 lines, with the rest split
+  per-concern under `Sources/DynamicIsland/Views/` (Ears /
+  ExpandedContent / Capsule / Pulse / Detail / Reply /
+  Progress). No behaviour change.
+  ([#48](https://github.com/bistin/cc-island/pull/48))
+
 ## [1.7.0] - 2026-04-27
 
 ### Added
