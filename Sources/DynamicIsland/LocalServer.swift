@@ -181,6 +181,15 @@ class LocalServer {
                 guard !request.body.isEmpty else {
                     throw EventError.missingBody
                 }
+                // Require explicit application/json content-type. Combined
+                // with the absence of `Access-Control-Allow-Origin` below,
+                // this forces browser callers through CORS preflight, which
+                // then fails — closing the "malicious tab POSTs a fake
+                // event" attack vector. Hooks / curl / URLSession already
+                // set this header.
+                guard isJSONContentType(request) else {
+                    throw EventError.unsupportedContentType
+                }
                 try processEvent(request.body)
                 sendHTTP(connection, body: "{\"status\":\"ok\"}")
             } catch {
@@ -207,6 +216,7 @@ class LocalServer {
     private enum EventError: Error {
         case missingBody
         case invalidJSON(String)
+        case unsupportedContentType
         case invalidShape(String)
 
         var code: String {
@@ -214,6 +224,7 @@ class LocalServer {
             case .missingBody: return "missing_body"
             case .invalidJSON: return "invalid_json"
             case .invalidShape: return "invalid_shape"
+            case .unsupportedContentType: return "unsupported_content_type"
             }
         }
 
@@ -222,8 +233,26 @@ class LocalServer {
             case .missingBody: return "missing request body"
             case .invalidJSON(let reason): return "invalid JSON: \(reason)"
             case .invalidShape(let reason): return "invalid event shape: \(reason)"
+            case .unsupportedContentType: return "Content-Type must be application/json"
             }
         }
+    }
+
+    /// True when the request's `Content-Type` header indicates JSON.
+    /// Browser "simple POST" requests default to text/plain or
+    /// x-www-form-urlencoded — rejecting those here forces a CORS
+    /// preflight which then fails (no `Access-Control-Allow-Origin`),
+    /// blocking the malicious-tab attack vector.
+    private func isJSONContentType(_ request: HTTPRequest) -> Bool {
+        // Headers are case-insensitive per RFC 7230. HTTPParser stores
+        // them lowercased.
+        guard let raw = request.headers["content-type"] else { return false }
+        // Strip optional parameters like `; charset=utf-8`.
+        let primary = raw
+            .split(separator: ";").first
+            .map { String($0).trimmingCharacters(in: .whitespaces).lowercased() }
+            ?? raw.lowercased()
+        return primary == "application/json"
     }
 
     /// Safely build a JSON error body. Runs fields through JSONSerialization
@@ -242,7 +271,12 @@ class LocalServer {
     }
 
     private func sendHTTP(_ connection: NWConnection, body: String, statusCode: String = "200 OK") {
-        let response = "HTTP/1.1 \(statusCode)\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: \(body.utf8.count)\r\n\r\n\(body)"
+        // No `Access-Control-Allow-Origin` header — combined with the
+        // application/json gate on `/event`, this fails CORS preflight
+        // for any browser request, blocking the malicious-tab attack
+        // vector. Hooks / curl / URLSession don't enforce CORS so they
+        // continue to work unchanged.
+        let response = "HTTP/1.1 \(statusCode)\r\nContent-Type: application/json\r\nContent-Length: \(body.utf8.count)\r\n\r\n\(body)"
         connection.send(content: response.data(using: .utf8)!, completion: .contentProcessed { _ in
             connection.cancel()
         })
