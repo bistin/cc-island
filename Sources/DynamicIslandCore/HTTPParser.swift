@@ -130,3 +130,21 @@ public enum HTTPParser {
         return .done(HTTPRequest(method: method, path: path, headers: headers, body: body))
     }
 }
+
+/// True when a `Content-Type` header value indicates JSON.
+///
+/// Used by `LocalServer` to gate POST `/event`: rejecting other types
+/// forces browser callers through CORS preflight (which then fails
+/// because we no longer respond with `Access-Control-Allow-Origin: *`).
+/// Hooks, curl, URLSession etc. set this header so they're unaffected.
+///
+/// Strips the optional `; charset=…` parameter and is case-insensitive
+/// so `Application/JSON; charset=utf-8` matches.
+public func isJSONContentType(_ headerValue: String?) -> Bool {
+    guard let raw = headerValue else { return false }
+    let primary = raw
+        .split(separator: ";", maxSplits: 1).first
+        .map { String($0).trimmingCharacters(in: .whitespaces).lowercased() }
+        ?? raw.trimmingCharacters(in: .whitespaces).lowercased()
+    return primary == "application/json"
+}

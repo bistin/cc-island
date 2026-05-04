@@ -165,4 +165,53 @@ final class HTTPParserTests: XCTestCase {
         if case .done = result { return }
         XCTFail("request at exactly cap should parse, got \(result)")
     }
+
+    // MARK: - isJSONContentType (#51 — POST /event content-type gate)
+
+    func testJSONContentType_acceptsBareApplicationJSON() {
+        XCTAssertTrue(isJSONContentType("application/json"))
+    }
+
+    func testJSONContentType_acceptsCharsetParameter() {
+        XCTAssertTrue(isJSONContentType("application/json; charset=utf-8"))
+    }
+
+    func testJSONContentType_caseInsensitive() {
+        XCTAssertTrue(isJSONContentType("Application/JSON"))
+        XCTAssertTrue(isJSONContentType("APPLICATION/JSON; CHARSET=UTF-8"))
+    }
+
+    func testJSONContentType_trimsSurroundingWhitespace() {
+        XCTAssertTrue(isJSONContentType("  application/json  "))
+        XCTAssertTrue(isJSONContentType("application/json ;charset=utf-8"))
+    }
+
+    func testJSONContentType_rejectsTextPlain() {
+        XCTAssertFalse(isJSONContentType("text/plain"))
+    }
+
+    func testJSONContentType_rejectsFormUrlEncoded() {
+        // The other "simple POST" content-type browsers can use
+        // without preflight.
+        XCTAssertFalse(isJSONContentType("application/x-www-form-urlencoded"))
+    }
+
+    func testJSONContentType_rejectsApplicationJSONPSuffix() {
+        // Substring match would let `application/jsonp` through.
+        XCTAssertFalse(isJSONContentType("application/jsonp"))
+    }
+
+    func testJSONContentType_rejectsParameterTrickedAttempts() {
+        // Parameter portion can't smuggle through.
+        XCTAssertFalse(isJSONContentType("text/plain; application/json"))
+    }
+
+    func testJSONContentType_rejectsNil() {
+        XCTAssertFalse(isJSONContentType(nil))
+    }
+
+    func testJSONContentType_rejectsEmpty() {
+        XCTAssertFalse(isJSONContentType(""))
+        XCTAssertFalse(isJSONContentType(";charset=utf-8"))
+    }
 }

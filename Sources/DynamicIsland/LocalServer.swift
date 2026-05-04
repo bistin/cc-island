@@ -186,8 +186,9 @@ class LocalServer {
                 // this forces browser callers through CORS preflight, which
                 // then fails — closing the "malicious tab POSTs a fake
                 // event" attack vector. Hooks / curl / URLSession already
-                // set this header.
-                guard isJSONContentType(request) else {
+                // set this header. Validation is in `DynamicIslandCore` so
+                // it's unit-tested without spinning up the full server.
+                guard isJSONContentType(request.headers["content-type"]) else {
                     throw EventError.unsupportedContentType
                 }
                 try processEvent(request.body)
@@ -238,22 +239,6 @@ class LocalServer {
         }
     }
 
-    /// True when the request's `Content-Type` header indicates JSON.
-    /// Browser "simple POST" requests default to text/plain or
-    /// x-www-form-urlencoded — rejecting those here forces a CORS
-    /// preflight which then fails (no `Access-Control-Allow-Origin`),
-    /// blocking the malicious-tab attack vector.
-    private func isJSONContentType(_ request: HTTPRequest) -> Bool {
-        // Headers are case-insensitive per RFC 7230. HTTPParser stores
-        // them lowercased.
-        guard let raw = request.headers["content-type"] else { return false }
-        // Strip optional parameters like `; charset=utf-8`.
-        let primary = raw
-            .split(separator: ";").first
-            .map { String($0).trimmingCharacters(in: .whitespaces).lowercased() }
-            ?? raw.lowercased()
-        return primary == "application/json"
-    }
 
     /// Safely build a JSON error body. Runs fields through JSONSerialization
     /// so embedded quotes / newlines don't corrupt the response.
