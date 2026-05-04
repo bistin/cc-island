@@ -181,7 +181,7 @@ struct DiagnosticsTab: View {
     @ViewBuilder
     private func recentRow(_ entry: RecentEvent) -> some View {
         HStack(spacing: 8) {
-            Text(timeFormatter.string(from: entry.timestamp))
+            Text(Self.timeFormatter.string(from: entry.timestamp))
                 .font(.system(.caption, design: .monospaced))
                 .foregroundColor(.secondary)
             Text(entry.title)
@@ -221,9 +221,11 @@ struct DiagnosticsTab: View {
         )
     }
 
-    private var timeFormatter: DateFormatter {
+    /// Static so we don't allocate a new formatter on every body /
+    /// row re-render — `DateFormatter.init` is non-trivial.
+    private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss"
         return f
-    }
+    }()
 }

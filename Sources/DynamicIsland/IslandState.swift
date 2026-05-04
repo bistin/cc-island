@@ -206,17 +206,13 @@ struct SessionChannel: Identifiable {
 /// surfaced by Settings → Diagnostics. Captured at the top of
 /// `pushEvent` so the buffer includes events that were dropped by
 /// the dispatch logic, not just ones the user saw.
-struct RecentEvent: Identifiable, Equatable {
+struct RecentEvent: Identifiable {
     let id = UUID()
     let timestamp: Date
     let title: String
     let style: EventStyle
     let source: String?
     let disposition: EventDisposition
-
-    static func == (lhs: RecentEvent, rhs: RecentEvent) -> Bool {
-        lhs.id == rhs.id
-    }
 }
 
 enum IslandMode: Equatable {
