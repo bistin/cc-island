@@ -24,6 +24,8 @@ struct SettingsView: View {
                 .tabItem { Label("Appearance", systemImage: "paintpalette") }
             HooksTab()
                 .tabItem { Label("Hooks", systemImage: "link") }
+            DiagnosticsTab(stateManager: stateManager)
+                .tabItem { Label("Diagnostics", systemImage: "stethoscope") }
         }
         .padding()
         .frame(minWidth: 480, minHeight: 440)

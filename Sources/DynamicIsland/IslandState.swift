@@ -202,6 +202,19 @@ struct SessionChannel: Identifiable {
 
 // MARK: - Display Mode
 
+/// One row in `IslandStateManager.recentEvents` — the audit trail
+/// surfaced by Settings → Diagnostics. Captured at the top of
+/// `pushEvent` so the buffer includes events that were dropped by
+/// the dispatch logic, not just ones the user saw.
+struct RecentEvent: Identifiable {
+    let id = UUID()
+    let timestamp: Date
+    let title: String
+    let style: EventStyle
+    let source: String?
+    let disposition: EventDisposition
+}
+
 enum IslandMode: Equatable {
     case compact
     case expanded
@@ -265,6 +278,13 @@ class IslandStateManager: ObservableObject {
     @Published private(set) var currentEventExpired: Bool = false
     private var expirationTimer: Timer?
 
+    /// Ring buffer of the last 20 events `pushEvent` was asked to handle,
+    /// regardless of disposition. Drives the Diagnostics tab so the user
+    /// can answer "why didn't this event show up?" by scrolling recent
+    /// attempts and seeing whether they were dropped, queued, or merged.
+    @Published private(set) var recentEvents: [RecentEvent] = []
+    private let recentEventsLimit = 20
+
     /// Reference to server for sending permission responses
     weak var server: LocalServer?
 
@@ -295,6 +315,7 @@ class IslandStateManager: ObservableObject {
                 currentExpired: self.currentEventExpired,
                 incoming: event.dispositionSnapshot
             )
+            self.recordRecentEvent(event, disposition: disposition)
             switch disposition {
             case .mergeProgress:
                 self.mergeProgress(into: event)
@@ -305,6 +326,24 @@ class IslandStateManager: ObservableObject {
             case .showImmediately:
                 self.showEvent(event)
             }
+        }
+    }
+
+    /// Append to the bounded `recentEvents` ring buffer that powers
+    /// the Diagnostics tab. Called for every `pushEvent` attempt
+    /// (including dropped ones) so the user can audit dispatch
+    /// outcomes.
+    private func recordRecentEvent(_ event: IslandEvent, disposition: EventDisposition) {
+        let entry = RecentEvent(
+            timestamp: Date(),
+            title: event.title,
+            style: event.style,
+            source: event.source,
+            disposition: disposition
+        )
+        recentEvents.append(entry)
+        if recentEvents.count > recentEventsLimit {
+            recentEvents.removeFirst(recentEvents.count - recentEventsLimit)
         }
     }
 

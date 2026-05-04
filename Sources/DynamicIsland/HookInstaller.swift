@@ -309,6 +309,20 @@ enum HookInstaller {
             || FileManager.default.fileExists(atPath: target.deployedHookURL.path)
     }
 
+    /// One-line status for the Diagnostics tab. Composes
+    /// `hasExistingInstall` + `currentlyInSync` so the UI doesn't
+    /// have to know which combination corresponds to which label.
+    enum InstallStatus: Equatable {
+        case notInstalled
+        case installedAndCurrent
+        case installedButOutdated
+    }
+
+    static func installStatus(target: Target) -> InstallStatus {
+        guard hasExistingInstall(target: target) else { return .notInstalled }
+        return currentlyInSync(target: target) ? .installedAndCurrent : .installedButOutdated
+    }
+
     // MARK: - Source resolution
 
     /// Locates the bundled `island-hook` binary that we deploy into the user's
