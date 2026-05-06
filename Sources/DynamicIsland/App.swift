@@ -134,6 +134,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             autoSyncClaudeKey: true,
             autoSyncCodexKey: true,
             autoSyncCopilotKey: false,
+            // Click-to-focus-terminal-tab: on by default; users can opt
+            // back into the legacy expand-on-click via Settings.
+            clickToTerminalKey: true,
         ])
 
         panel = IslandPanel(stateManager: stateManager)

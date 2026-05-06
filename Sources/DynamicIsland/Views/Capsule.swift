@@ -75,7 +75,7 @@ struct CompactPillView: View {
                 .overlay(Capsule().strokeBorder(event.style.glowColor, lineWidth: 1))
                 .shadow(color: event.style.glowColor, radius: 8, x: 0, y: 2)
         )
-        .onTapGesture { stateManager.expand() }
+        .onTapGesture { stateManager.handleCompactTap() }
         .onAppear { appeared = true }
         .onDisappear { appeared = false }
     }

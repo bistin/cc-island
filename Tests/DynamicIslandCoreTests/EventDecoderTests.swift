@@ -103,4 +103,61 @@ final class EventDecoderTests: XCTestCase {
         ]
         XCTAssertNil(decodeSuggestedRuleFields(from: json))
     }
+
+    // MARK: - decodeTTY
+
+    func testTTY_acceptsTtysShape() {
+        XCTAssertEqual(decodeTTY(from: "/dev/ttys003"), "/dev/ttys003")
+        XCTAssertEqual(decodeTTY(from: "/dev/ttys123"), "/dev/ttys123")
+    }
+
+    func testTTY_acceptsPtsShape() {
+        XCTAssertEqual(decodeTTY(from: "/dev/pts/3"), "/dev/pts/3")
+        XCTAssertEqual(decodeTTY(from: "/dev/pts/42"), "/dev/pts/42")
+    }
+
+    func testTTY_nilForRelativePath() {
+        // Relative paths bypass the `/dev/` allow-list — always reject.
+        XCTAssertNil(decodeTTY(from: "ttys003"))
+    }
+
+    func testTTY_nilForArbitraryDevicePath() {
+        // Other /dev/ entries (disks, console) must not be focusable —
+        // AppleScript would happily interpolate them.
+        XCTAssertNil(decodeTTY(from: "/dev/null"))
+        XCTAssertNil(decodeTTY(from: "/dev/tty"))
+        XCTAssertNil(decodeTTY(from: "/dev/console"))
+        XCTAssertNil(decodeTTY(from: "/dev/disk0"))
+    }
+
+    func testTTY_nilForInjectionAttempt() {
+        // Strict regex rejects newlines / quotes / shell metacharacters
+        // even inside /dev/ttys-prefixed strings.
+        XCTAssertNil(decodeTTY(from: "/dev/ttys003\"; do shell script \"rm\""))
+        XCTAssertNil(decodeTTY(from: "/dev/ttys003\nactivate"))
+        XCTAssertNil(decodeTTY(from: "/dev/ttys003 && evil"))
+        XCTAssertNil(decodeTTY(from: "/dev/../etc/passwd"))
+    }
+
+    func testTTY_nilForMissing() {
+        XCTAssertNil(decodeTTY(from: nil))
+    }
+
+    func testTTY_nilForNonString() {
+        XCTAssertNil(decodeTTY(from: 42))
+        XCTAssertNil(decodeTTY(from: true))
+        XCTAssertNil(decodeTTY(from: ["/dev/ttys003"]))
+    }
+
+    func testTTY_nilForEmpty() {
+        XCTAssertNil(decodeTTY(from: ""))
+    }
+
+    func testTTY_nilForOversize() {
+        // Pathological 64+ char path — bound the length so we don't
+        // dump arbitrary bytes into AppleScript even if the regex
+        // would otherwise match.
+        let huge = "/dev/ttys" + String(repeating: "9", count: 200)
+        XCTAssertNil(decodeTTY(from: huge))
+    }
 }

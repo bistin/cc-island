@@ -33,6 +33,13 @@ public struct HookPlan {
     /// `longPollResponse` and is mirrored into the `~/.claude/settings.json`
     /// Stop entry's `timeout` field on install.
     public let stopReplyTimeoutSeconds: TimeInterval
+    /// Controlling TTY of the Claude Code / Copilot / Codex process that
+    /// invoked this hook (e.g. `/dev/ttys003`). Forwarded into the event
+    /// payload via `decorate` so a click on the island can ask
+    /// `Terminal.app` / `iTerm2` to focus the matching tab without any
+    /// other correlation. Nil when the parent isn't attached to a TTY
+    /// (GUI launch, self-test) — callers fall back to no-op activate.
+    public let tty: String?
 
     public init(
         payload: [String: Any], source: String, event: String, tool: String,
@@ -42,7 +49,8 @@ public struct HookPlan {
         toolInput: [String: Any], copilotToolArgs: [String: Any],
         cpError: String?,
         inlineReplyEnabled: Bool = false,
-        stopReplyTimeoutSeconds: TimeInterval = StopReplyTimeoutSeconds
+        stopReplyTimeoutSeconds: TimeInterval = StopReplyTimeoutSeconds,
+        tty: String? = nil
     ) {
         self.payload = payload
         self.source = source
@@ -59,12 +67,20 @@ public struct HookPlan {
         self.cpError = cpError
         self.inlineReplyEnabled = inlineReplyEnabled
         self.stopReplyTimeoutSeconds = stopReplyTimeoutSeconds
+        self.tty = tty
     }
 }
 
 /// Parse a raw hook payload into a `HookPlan`, returning nil if the payload
 /// doesn't match any routable shape. Pure — no I/O.
-public func parseHookPlan(payload: [String: Any], env: [String: String] = [:]) -> HookPlan? {
+///
+/// `tty` is plumbed in by the hook binary (which runs `detectControllingTTY`)
+/// rather than discovered here, so this stays Foundation-only and unit-testable.
+public func parseHookPlan(
+    payload: [String: Any],
+    env: [String: String] = [:],
+    tty: String? = nil
+) -> HookPlan? {
     // SOURCE drives the project color:
     //   claude  → warm orange    copilot → GitHub violet    codex → OpenAI green
     // Override via ISLAND_SOURCE env var (Codex hook script should set this).
@@ -159,7 +175,8 @@ public func parseHookPlan(payload: [String: Any], env: [String: String] = [:]) -
         toolInput: toolInput, copilotToolArgs: copilotToolArgs,
         cpError: cpError,
         inlineReplyEnabled: env["CC_ISLAND_INLINE_REPLY"] == "1",
-        stopReplyTimeoutSeconds: stopReplyTimeoutSeconds
+        stopReplyTimeoutSeconds: stopReplyTimeoutSeconds,
+        tty: tty
     )
 }
 
@@ -182,6 +199,13 @@ extension HookPlan {
         // "user resolved on the terminal side" detection (#31 follow-up).
         if let sid = payload["session_id"] as? String, !sid.isEmpty {
             p["session_id"] = sid
+        }
+        // Carries the Claude Code process's controlling TTY so a click on
+        // the island can focus the matching Terminal.app / iTerm2 tab.
+        // Only set when the hook actually resolved one; the app side
+        // tolerates a missing field.
+        if let tty = tty, !tty.isEmpty {
+            p["tty"] = tty
         }
         return p
     }

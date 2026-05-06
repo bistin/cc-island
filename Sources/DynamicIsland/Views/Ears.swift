@@ -139,9 +139,7 @@ struct LeftEarView: View {
                 : .clear,
             radius: 8
         )
-        .onTapGesture {
-            if isPulsing { stateManager.dismiss() } else { stateManager.expand() }
-        }
+        .onTapGesture { stateManager.handleCompactTap() }
         .onChange(of: isVisible) { vis in
             withAnimation(.spring(response: 0.3, dampingFraction: 0.6).delay(0.05)) {
                 appeared = vis
@@ -217,9 +215,7 @@ struct RightEarView: View {
                 : .clear,
             radius: 8
         )
-        .onTapGesture {
-            if isPulsing { stateManager.dismiss() } else { stateManager.expand() }
-        }
+        .onTapGesture { stateManager.handleCompactTap() }
         .onChange(of: isVisible) { vis in
             if vis && isPulsing {
                 withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {

@@ -49,6 +49,13 @@ let stopReplyTimeoutKey = "stopReplyTimeoutSeconds"
 /// move. Default `200`.
 let screenFollowerDwellKey = "screenFollowerDwellMilliseconds"
 
+/// UserDefaults Bool key gating "click on island → focus terminal tab".
+/// When on (default), a tap on a non-decision compact ear / pill runs
+/// `TerminalActivator.activate(tty:)` and dismisses the island. When
+/// off, taps fall back to the legacy expand behaviour. Read by the tap
+/// handlers in `Ears.swift` / `Capsule.swift`.
+let clickToTerminalKey = "clickToTerminalEnabled"
+
 /// UserDefaults keys for the source colour palette (#45). Stored as
 /// `#RRGGBB` hex strings so they survive plist round-trips without a
 /// custom codable adapter. Read by `IslandEvent.sourceColor(_:)` and
