@@ -51,7 +51,8 @@ struct ExpandedContentView: View {
                 PermissionActionButtons(
                     stateManager: stateManager,
                     suggestedRule: event.suggestedRule,
-                    eventID: event.id
+                    eventID: event.id,
+                    tty: event.tty
                 )
             }
 

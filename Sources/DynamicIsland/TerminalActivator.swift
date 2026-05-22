@@ -14,32 +14,55 @@ import Foundation
 /// interpolation below from being a shell-injection sink even though the
 /// payload originates from an HTTP POST.
 enum TerminalActivator {
-    enum Result: Equatable {
-        case focused(app: String)   // tab successfully focused
-        case appActivated(String)   // tab not found, but we surfaced the app
-        case noMatch                // no supported terminal could focus it
+    /// Cheap synchronous check: is any supported terminal app currently
+    /// running? Called on the main thread before `activate(tty:)` so the
+    /// tap handler can fall back to `expand()` when there's no terminal
+    /// to switch to (instead of silently dismissing the island).
+    static func hasRunningTerminal() -> Bool {
+        firstRunningTerminalBundleID() != nil
     }
 
-    static func activate(tty: String) -> Result {
-        // Order matters: try the app the tty most likely belongs to first.
-        // We probe Terminal then iTerm2 — both are no-ops when not running.
-        if isRunning(bundleID: "com.apple.Terminal"),
-           runScript(terminalAppScript(tty: tty)) {
-            return .focused(app: "Terminal")
+    /// Fire-and-forget: focus the terminal tab whose controlling TTY
+    /// matches `tty`. Async-dispatched on the main queue so the caller's
+    /// dismiss animation gets to start before AppleScript blocks
+    /// (~100-500ms on iTerm2 with many windows).
+    ///
+    /// Must run on main: NSAppleScript from a background queue has no
+    /// CFRunLoop and silently swallows the AppleEvent dispatch + TCC
+    /// permission prompt; NSWorkspace.runningApplications is also
+    /// documented main-thread-only.
+    ///
+    /// Callers must precheck `hasRunningTerminal()` — when no terminal is
+    /// running we do nothing here, leaving the UI decision (expand vs
+    /// dismiss) to the caller.
+    static func activate(tty: String) {
+        DispatchQueue.main.async {
+            let runningIDs = Set(
+                NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier }
+            )
+            if runningIDs.contains("com.apple.Terminal"),
+               runScript(terminalAppScript(tty: tty)) {
+                return
+            }
+            if runningIDs.contains("com.googlecode.iterm2"),
+               runScript(iTermScript(tty: tty)) {
+                // AppleScript `activate` doesn't reliably surface
+                // fullscreen-Space iTerm windows from an LSUIElement
+                // caller — belt-and-suspenders with NSWorkspace.
+                NSWorkspace.shared.runningApplications
+                    .first { $0.bundleIdentifier == "com.googlecode.iterm2" }?
+                    .activate(options: [.activateAllWindows])
+                return
+            }
+            // No tab matched. Surface whichever terminal app is running
+            // so the user lands somewhere familiar.
+            if let fallbackID = knownTerminalBundleIDs
+                .first(where: { runningIDs.contains($0) }) {
+                NSWorkspace.shared.runningApplications
+                    .first { $0.bundleIdentifier == fallbackID }?
+                    .activate(options: [.activateAllWindows])
+            }
         }
-        if isRunning(bundleID: "com.googlecode.iterm2"),
-           runScript(iTermScript(tty: tty)) {
-            return .focused(app: "iTerm2")
-        }
-        // Fall back to surfacing whichever terminal-class app is running so
-        // the user lands somewhere familiar even if we can't pick the tab.
-        if let bundleID = firstRunningTerminalBundleID() {
-            NSWorkspace.shared.runningApplications
-                .first { $0.bundleIdentifier == bundleID }?
-                .activate(options: [])
-            return .appActivated(bundleID)
-        }
-        return .noMatch
     }
 
     // MARK: - AppleScript sources
@@ -77,6 +100,9 @@ enum TerminalActivator {
                     repeat with s in sessions of t
                         try
                             if tty of s is "\(tty)" then
+                                tell w
+                                    select t
+                                end tell
                                 select s
                                 activate
                                 return true
@@ -103,12 +129,6 @@ enum TerminalActivator {
     }
 
     // MARK: - App discovery
-
-    private static func isRunning(bundleID: String) -> Bool {
-        NSWorkspace.shared.runningApplications.contains {
-            $0.bundleIdentifier == bundleID
-        }
-    }
 
     /// Bundle IDs of the most common macOS terminal apps. Order doesn't
     /// matter — any one being frontmost is good enough for the fallback.

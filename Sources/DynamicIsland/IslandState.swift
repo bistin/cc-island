@@ -475,8 +475,9 @@ class IslandStateManager: ObservableObject {
             return
         }
         if let tty = event.tty,
-           dynamicIslandUserDefaults.bool(forKey: clickToTerminalKey) {
-            _ = TerminalActivator.activate(tty: tty)
+           dynamicIslandUserDefaults.bool(forKey: clickToTerminalKey),
+           TerminalActivator.hasRunningTerminal() {
+            TerminalActivator.activate(tty: tty)
             dismiss()
             return
         }

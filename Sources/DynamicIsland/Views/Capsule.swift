@@ -151,7 +151,8 @@ struct ExpandedPillView: View {
                 PermissionActionButtons(
                     stateManager: stateManager,
                     suggestedRule: event.suggestedRule,
-                    eventID: event.id
+                    eventID: event.id,
+                    tty: event.tty
                 )
             }
 
