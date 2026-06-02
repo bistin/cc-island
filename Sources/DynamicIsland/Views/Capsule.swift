@@ -91,6 +91,10 @@ struct CompactPillView: View {
                 .overlay(Capsule().strokeBorder(event.style.glowColor, lineWidth: 1))
                 .shadow(color: event.style.glowColor, radius: 8, x: 0, y: 2)
         )
+        // Make the whole pill tappable: `.background` content is excluded from
+        // hit-testing, so without this only the text glyphs registered taps —
+        // the rounded ends and padding were dead zones.
+        .contentShape(Capsule())
         .onTapGesture { stateManager.expand() }
         .onAppear { appeared = true }
         .onDisappear { appeared = false }
