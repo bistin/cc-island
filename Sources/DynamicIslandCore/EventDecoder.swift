@@ -37,3 +37,20 @@ public func decodeSuggestedRuleFields(from json: [String: Any]) -> (toolName: St
     }
     return (toolName, ruleContent)
 }
+
+/// Strict allow-list for the `tty` field on event payloads. Returns the
+/// path verbatim only when it matches `/dev/ttys<digits>` or
+/// `/dev/pts/<digits>` — the two shapes macOS / Linux assign to
+/// pseudo-terminals. Anything else (relative paths, traversal,
+/// unrelated `/dev/` device nodes, non-strings) returns nil.
+///
+/// The value is interpolated into AppleScript source at click time
+/// (see `TerminalActivator`), so a permissive decoder would expose a
+/// shell-style injection surface to anyone able to POST `/event`. Keep
+/// this list narrow.
+public func decodeTTY(from raw: Any?) -> String? {
+    guard let s = raw as? String, !s.isEmpty, s.count <= 64 else { return nil }
+    let pattern = #"^/dev/(ttys[0-9]+|pts/[0-9]+)$"#
+    guard s.range(of: pattern, options: .regularExpression) != nil else { return nil }
+    return s
+}

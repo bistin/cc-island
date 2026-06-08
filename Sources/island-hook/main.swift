@@ -22,10 +22,17 @@ let eventID = UUID().uuidString.lowercased()
 // MARK: - Parse stdin
 
 let inputData = FileHandle.standardInput.readDataToEndOfFile()
+// Resolve the parent process's controlling TTY before parse so it rides
+// through `decorate` into every payload — see `HookPlan.tty`.
+let detectedTTY = detectControllingTTY()
 guard !inputData.isEmpty,
       let jsonAny = try? JSONSerialization.jsonObject(with: inputData),
       let payload = jsonAny as? [String: Any],
-      let plan = parseHookPlan(payload: payload, env: ProcessInfo.processInfo.environment)
+      let plan = parseHookPlan(
+        payload: payload,
+        env: ProcessInfo.processInfo.environment,
+        tty: detectedTTY
+      )
 else { exit(0) }
 
 // MARK: - I/O helpers

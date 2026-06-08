@@ -95,7 +95,7 @@ struct CompactPillView: View {
         // hit-testing, so without this only the text glyphs registered taps —
         // the rounded ends and padding were dead zones.
         .contentShape(Capsule())
-        .onTapGesture { stateManager.expand() }
+        .onTapGesture { stateManager.handleCompactTap() }
         .onAppear { appeared = true }
         .onDisappear { appeared = false }
     }
@@ -180,7 +180,8 @@ struct ExpandedPillView: View {
                 PermissionActionButtons(
                     stateManager: stateManager,
                     suggestedRule: event.suggestedRule,
-                    eventID: event.id
+                    eventID: event.id,
+                    tty: event.tty
                 )
             }
 

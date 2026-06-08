@@ -38,6 +38,9 @@ private struct GeneralTab: View {
     @AppStorage(enableInlineReplyKey, store: dynamicIslandUserDefaults)
     private var inlineReplyEnabled = false
 
+    @AppStorage(clickToTerminalKey, store: dynamicIslandUserDefaults)
+    private var clickToTerminalEnabled = true
+
     @AppStorage(stopReplyTimeoutKey, store: dynamicIslandUserDefaults)
     private var stopReplyTimeoutSeconds: Double = StopReplyTimeoutSeconds
 
@@ -46,6 +49,16 @@ private struct GeneralTab: View {
 
     var body: some View {
         Form {
+            Section {
+                Toggle("Click island to focus terminal tab", isOn: $clickToTerminalEnabled)
+                Text("Tapping a non-decision event jumps to the Terminal.app or iTerm2 tab running the matching session. Falls back to expanding the event when the tab can't be located. Turn off to keep the legacy expand-on-tap behaviour.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Click behaviour").font(.headline)
+            }
+
             Section {
                 Toggle("Inline reply for Stop events", isOn: $inlineReplyEnabled)
                 Text("Lets you reply to Claude's free-form questions directly from the island. Toggling this changes the UI immediately, but the hook side only picks it up after reinstalling Claude Code hooks (see Hooks tab).")

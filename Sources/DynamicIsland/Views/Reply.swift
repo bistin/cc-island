@@ -30,8 +30,17 @@ struct PermissionActionButtons: View {
     @ObservedObject var stateManager: IslandStateManager
     let suggestedRule: PermissionRuleSuggestion?
     let eventID: UUID
+    let tty: String?
+
+    @AppStorage(clickToTerminalKey, store: dynamicIslandUserDefaults)
+    private var clickToTerminalEnabled = true
 
     private var expired: Bool { stateManager.currentEventExpired }
+
+    private var canJumpToTab: Bool {
+        guard !expired, clickToTerminalEnabled, let tty, !tty.isEmpty else { return false }
+        return TerminalActivator.hasRunningTerminal()
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -106,6 +115,29 @@ struct PermissionActionButtons: View {
                 .buttonStyle(.plain)
                 .disabled(expired)
                 .opacity(expired ? 0.5 : 1)
+            }
+
+            // Jump to the terminal tab that's awaiting this decision —
+            // gives the user a discoverable alternative to clicking the
+            // ear, which isn't obvious. Doesn't resolve the permission;
+            // user still has to come back and pick Allow/Deny.
+            if canJumpToTab, let tty {
+                Button(action: { TerminalActivator.activate(tty: tty) }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "terminal")
+                            .font(.system(size: 11))
+                        Text("Jump to terminal tab")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(.white.opacity(0.85))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 9)
+                            .fill(Color.white.opacity(0.08))
+                    )
+                }
+                .buttonStyle(.plain)
             }
 
             if expired {

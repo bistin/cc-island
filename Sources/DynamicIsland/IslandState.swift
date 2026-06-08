@@ -54,6 +54,13 @@ struct IslandEvent: Identifiable {
     /// same purpose as `agentID`.
     let sessionID: String?
 
+    /// Controlling TTY of the Claude Code / Copilot / Codex process that
+    /// fired this hook (e.g. `/dev/ttys003`). Forwarded by the hook so
+    /// a click on the island can ask the terminal app to focus the tab
+    /// running the session. Nil when the parent had no tty (GUI launch,
+    /// self-test) — the click then falls back to expand/collapse.
+    let tty: String?
+
     /// Color signaling event source. Falls back to a deterministic
     /// project-name hash when the source isn't known, so legacy callers
     /// (e.g. plain HTTP POST without source) still get visual variety.
@@ -105,7 +112,8 @@ struct IslandEvent: Identifiable {
         suggestedRule: PermissionRuleSuggestion? = nil,
         replyMode: ReplyMode? = nil,
         agentID: String? = nil,
-        sessionID: String? = nil
+        sessionID: String? = nil,
+        tty: String? = nil
     ) {
         self.id = id
         self.icon = icon
@@ -122,6 +130,7 @@ struct IslandEvent: Identifiable {
         self.replyMode = replyMode
         self.agentID = agentID
         self.sessionID = sessionID
+        self.tty = tty
     }
 }
 
@@ -364,7 +373,8 @@ class IslandStateManager: ObservableObject {
             persistent: event.persistent,
             project: event.project,
             source: event.source,
-            suggestedRule: event.suggestedRule
+            suggestedRule: event.suggestedRule,
+            tty: event.tty ?? current.tty
         )
         self.currentEvent = merged
         if !event.persistent {
@@ -445,6 +455,33 @@ class IslandStateManager: ObservableObject {
         withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
             mode = .expanded
         }
+    }
+
+    /// Single entry point for compact ear / capsule taps.
+    ///
+    /// Pulsing events (action / reminder) keep their existing dismiss
+    /// behaviour because their decision UI lives on the island itself.
+    /// Everything else: when the user has click-to-terminal on (default)
+    /// and the event carries a tty, ask `TerminalActivator` to focus the
+    /// matching tab and dismiss the island. Otherwise fall back to
+    /// expanding so the user can still inspect the diff / detail.
+    ///
+    /// Kept on the state manager so the three view sites share one
+    /// policy and a future test can drive it without an NSPanel.
+    func handleCompactTap() {
+        guard let event = currentEvent else { return }
+        if event.style == .action || event.style == .reminder {
+            dismiss()
+            return
+        }
+        if let tty = event.tty,
+           dynamicIslandUserDefaults.bool(forKey: clickToTerminalKey),
+           TerminalActivator.hasRunningTerminal() {
+            TerminalActivator.activate(tty: tty)
+            dismiss()
+            return
+        }
+        expand()
     }
 
     func collapse() {

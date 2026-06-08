@@ -386,6 +386,10 @@ class LocalServer {
         let payloadID = (json["event_id"] as? String).flatMap(UUID.init(uuidString:))
         let agentIDValue = json["agent_id"] as? String
         let sessionIDValue = json["session_id"] as? String
+        // `decodeTTY` enforces a strict `/dev/ttys<N>` / `/dev/pts/<N>`
+        // allow-list before this string ever reaches AppleScript. See
+        // EventDecoder.decodeTTY for the shell-injection rationale.
+        let ttyValue = decodeTTY(from: json["tty"])
         let event = IslandEvent(
             id: payloadID ?? UUID(),
             icon: icon,
@@ -401,7 +405,8 @@ class LocalServer {
             suggestedRule: suggestedRule,
             replyMode: replyMode,
             agentID: agentIDValue,
-            sessionID: sessionIDValue
+            sessionID: sessionIDValue,
+            tty: ttyValue
         )
 
         // Route into the session tree: main session when no agent_id, else
