@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-06-08
+
+### Added
+- **Click an event to jump to its terminal tab.** The hook captures
+  the parent process's controlling TTY via `ps` and forwards it on
+  every event payload. The app decodes it through a strict
+  `/dev/ttys<N>` / `/dev/pts/<N>` allow-list (keeping AppleScript
+  interpolation safe) and `TerminalActivator` runs an osascript to
+  focus the matching tab in Terminal.app / iTerm2, falling back to
+  `NSWorkspace.activate` for other terminals and to the legacy
+  expand-on-tap when no tty is available. Off-switch under
+  Settings → General → Click behaviour. Requires the new
+  `NSAppleEventsUsageDescription` (Automation permission).
+  ([#53](https://github.com/bistin/cc-island/pull/53))
+- **Settings — Diagnostics & Tools tab.** A fourth Settings tab:
+  server listener address, per-target hook install-status badges
+  (Not installed / Installed / Out of sync) with deployed-binary
+  paths, a ring buffer of the last 20 events with disposition
+  badges (shown / queued / merged / dropped), plus self-test
+  actions (Send Test Event, etc.).
+  ([#50](https://github.com/bistin/cc-island/pull/50))
+- **Capsule radar-ping source dot.** The compact pill's source dot
+  emits a one-shot radar ring each time a new event arrives (scales
+  1×→3.2× over 0.7 s while fading out), replacing the largely-unused
+  `iconForType` emoji decoration. Bespoke icons passed explicitly
+  (NotificationMonitor's 🔊 / 🔒 / ☀️, manual POSTs) still render.
+  ([#52](https://github.com/bistin/cc-island/pull/52))
+
+### Changed
+- **Whole compact pill is now tappable.** Added `.contentShape(Capsule())`
+  so the rounded ends and padding register taps — previously only the
+  text glyphs did, leaving dead zones.
+  ([#54](https://github.com/bistin/cc-island/pull/54))
+
+### Security
+- **Blocked a browser-tab attack vector on `/event`.** The local
+  HTTP server dropped its permissive `Access-Control-Allow-Origin: *`
+  header and now requires `Content-Type: application/json` on POST
+  `/event`, closing both the CORS-preflight and `text/plain`
+  simple-POST paths a malicious tab could use to spawn fake events
+  or permission UIs.
+  ([#51](https://github.com/bistin/cc-island/pull/51))
+
 ## [1.8.0] - 2026-05-04
 
 ### Added
