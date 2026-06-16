@@ -44,6 +44,15 @@ let enableInlineReplyKey = "enableInlineReply"
 /// `timeout` field, with a +5 s round-trip buffer). Default `30`.
 let stopReplyTimeoutKey = "stopReplyTimeoutSeconds"
 
+/// UserDefaults key for the PermissionRequest long-poll horizon, in
+/// seconds. Read by `HookInstaller.commandString` (injected as
+/// `CC_ISLAND_PERMISSION_TIMEOUT` env) and by `HookInstaller.events`
+/// (mirrored into the PermissionRequest entry's `timeout` field, with a
+/// +5 s round-trip buffer). Also read at runtime by `LocalServer`'s
+/// response long-poll and `IslandStateManager`'s expired-dim mirror so
+/// all three agree on one horizon. Default `300` (5 min).
+let permissionTimeoutKey = "permissionTimeoutSeconds"
+
 /// UserDefaults key for the screen-follower dwell debounce, in
 /// milliseconds (#41). Read at runtime by `ScreenFollower` per cursor
 /// move. Default `200`.
@@ -211,11 +220,27 @@ enum HookInstaller {
                     default: StopReplyTimeoutSeconds
                 )
                 prefixes.append("CC_ISLAND_STOP_TIMEOUT=\(formatStopTimeout(stopTimeout))")
+                // PermissionRequest long-poll horizon. Always emitted for
+                // the same byte-compare-canonical reason as the Stop one.
+                let permissionTimeout = positiveDouble(
+                    dynamicIslandUserDefaults,
+                    forKey: permissionTimeoutKey,
+                    default: PermissionTimeoutSeconds
+                )
+                prefixes.append("CC_ISLAND_PERMISSION_TIMEOUT=\(formatStopTimeout(permissionTimeout))")
                 return "\(prefixes.joined(separator: " ")) \(quoted)"
             case .copilot:
                 return path
             case .codex:
-                return "ISLAND_SOURCE=codex \(shellQuote(path))"
+                // Share the permission horizon so codex's PermissionRequest
+                // long-poll matches its registered (+5) timeout, just like
+                // Claude Code's.
+                let permissionTimeout = positiveDouble(
+                    dynamicIslandUserDefaults,
+                    forKey: permissionTimeoutKey,
+                    default: PermissionTimeoutSeconds
+                )
+                return "ISLAND_SOURCE=codex CC_ISLAND_PERMISSION_TIMEOUT=\(formatStopTimeout(permissionTimeout)) \(shellQuote(path))"
             }
         }
 
@@ -226,7 +251,17 @@ enum HookInstaller {
                     ("PreToolUse",         "",                                         5),
                     ("PostToolUse",        "Bash|Edit|Write",                          5),
                     ("PostToolUseFailure", "",                                         5),
-                    ("PermissionRequest",  "Bash|Edit|Write|MultiEdit|NotebookEdit",  30),
+                    // PermissionRequest long-polls `/response` for the user's
+                    // Allow/Deny up to the permission-timeout setting. Claude
+                    // Code SIGKILLs hooks at the registered timeout, so this
+                    // entry must outlive the long-poll horizon — +5 s buffer,
+                    // derived from the same UserDefault the env injection reads.
+                    ("PermissionRequest",  "Bash|Edit|Write|MultiEdit|NotebookEdit",
+                        Int(ceil(positiveDouble(
+                            dynamicIslandUserDefaults,
+                            forKey: permissionTimeoutKey,
+                            default: PermissionTimeoutSeconds
+                        ) + 5))),
                     ("PermissionDenied",   "",                                         5),
                     ("Notification",       "",                                         5),
                     // Stop long-polls `/response` for the user's Stop reply
@@ -265,7 +300,12 @@ enum HookInstaller {
                 return [
                     ("SessionStart",      "startup|resume", 5),
                     ("PreToolUse",        "Bash",           5),
-                    ("PermissionRequest", "Bash",          30),
+                    ("PermissionRequest", "Bash",
+                        Int(ceil(positiveDouble(
+                            dynamicIslandUserDefaults,
+                            forKey: permissionTimeoutKey,
+                            default: PermissionTimeoutSeconds
+                        ) + 5))),
                     ("PostToolUse",       "Bash",           5),
                     ("UserPromptSubmit",  "",               5),
                     ("Stop",              "",              30),

@@ -44,6 +44,9 @@ private struct GeneralTab: View {
     @AppStorage(stopReplyTimeoutKey, store: dynamicIslandUserDefaults)
     private var stopReplyTimeoutSeconds: Double = StopReplyTimeoutSeconds
 
+    @AppStorage(permissionTimeoutKey, store: dynamicIslandUserDefaults)
+    private var permissionTimeoutSeconds: Double = PermissionTimeoutSeconds
+
     @AppStorage(screenFollowerDwellKey, store: dynamicIslandUserDefaults)
     private var screenFollowerDwellMs: Double = 200
 
@@ -70,6 +73,25 @@ private struct GeneralTab: View {
             }
 
             Section {
+                HStack {
+                    Text("Permission timeout")
+                    Spacer()
+                    TextField(
+                        "",
+                        value: $permissionTimeoutSeconds,
+                        format: .number.precision(.fractionLength(0...1))
+                    )
+                    .frame(width: 60)
+                    .multilineTextAlignment(.trailing)
+                    .textFieldStyle(.roundedBorder)
+                    Text("seconds")
+                        .foregroundColor(.secondary)
+                }
+                Text("How long the island keeps Allow/Deny buttons live before they dim and fall back to Claude's own permission prompt. Default 300 s (5 min). Reinstall hooks to apply.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 HStack {
                     Text("Stop reply timeout")
                     Spacer()

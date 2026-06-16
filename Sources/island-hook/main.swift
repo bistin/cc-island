@@ -143,7 +143,11 @@ case "PermissionRequest":
     )
     send(body)
 
-    let decision = longPollResponse(timeoutSeconds: 25)
+    // Horizon sourced from `CC_ISLAND_PERMISSION_TIMEOUT` env (parsed into
+    // `plan.permissionTimeoutSeconds`, default 300 s). The matching
+    // settings.json PermissionRequest entry timeout outlives this by +5 s
+    // so Claude Code doesn't SIGKILL the hook mid-poll.
+    let decision = longPollResponse(timeoutSeconds: plan.permissionTimeoutSeconds)
     switch decision.behavior {
     case "allow":
         if let rule = decision.rule {

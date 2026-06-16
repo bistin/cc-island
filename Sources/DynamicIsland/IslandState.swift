@@ -440,12 +440,26 @@ class IslandStateManager: ObservableObject {
     }
 
     /// How long until the hook on the other end gives up waiting for a
-    /// reply. Mirrors the hard-coded 25 s in `LocalServer.handleResponsePoll`
-    /// for `.action`, and `IslandHookCore.StopReplyTimeoutSeconds` for the
-    /// quick-reply path. `nil` for events with no decision affordance.
+    /// reply. Mirrors `LocalServer.handleResponsePoll`'s permission-timeout
+    /// setting for `.action`, and the Stop reply timeout for the
+    /// quick-reply path — both read from the same UserDefaults the hook
+    /// env injection uses so the UI dims at the same instant the hook and
+    /// server give up. `nil` for events with no decision affordance.
     private func expirationTimeout(for event: IslandEvent) -> TimeInterval? {
-        if event.style == .action { return 25 }
-        if event.replyMode != nil { return StopReplyTimeoutSeconds }
+        if event.style == .action {
+            return positiveDouble(
+                dynamicIslandUserDefaults,
+                forKey: permissionTimeoutKey,
+                default: PermissionTimeoutSeconds
+            )
+        }
+        if event.replyMode != nil {
+            return positiveDouble(
+                dynamicIslandUserDefaults,
+                forKey: stopReplyTimeoutKey,
+                default: StopReplyTimeoutSeconds
+            )
+        }
         return nil
     }
 
