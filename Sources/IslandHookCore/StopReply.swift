@@ -7,6 +7,19 @@ import Foundation
 /// away can still react. Tunable as user feedback rolls in.
 public let StopReplyTimeoutSeconds: TimeInterval = 30
 
+/// How long the `PermissionRequest` hook waits for the user to tap
+/// Allow/Deny on the island before falling back to Claude Code's own
+/// permission prompt. Replaces the three scattered hard-coded `25` s
+/// values (hook long-poll, `LocalServer` server long-poll, and the
+/// `IslandState` expired-dim mirror) with one tunable horizon.
+///
+/// Default 5 minutes — long enough that the user can step away from the
+/// keyboard and still come back to a live Allow/Deny, instead of the old
+/// 25 s window that dimmed the buttons before they returned. Sourced from
+/// `CC_ISLAND_PERMISSION_TIMEOUT` on the hook side and the
+/// `permissionTimeoutSeconds` UserDefault on the app side.
+public let PermissionTimeoutSeconds: TimeInterval = 300
+
 /// Returns true if `message` contains a `?` or `？` anywhere — used to
 /// decide whether a Stop event should offer reply UI (quick-reply buttons
 /// today, inline text field once Phase 2 lands).

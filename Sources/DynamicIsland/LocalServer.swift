@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import DynamicIslandCore
+import IslandHookCore
 
 /// Lightweight HTTP server that receives Claude Code hook events.
 /// Listens on a configurable port (default 9423) for POST /event requests.
@@ -267,10 +268,15 @@ class LocalServer {
         })
     }
 
-    /// Long-poll: waits up to 25 s for user to tap Allow/Deny/Always or a
+    /// Long-poll: waits up to the permission-timeout setting (default
+    /// 5 min) for the user to tap Allow/Deny/Always or a
     /// quick reply for the event matching `event_id`, then returns the
     /// choice. A poll without `event_id`, or with one that never matches,
     /// returns "timeout" — never a parked decision from another event.
+    ///
+    /// Reads the same `permissionTimeoutKey` UserDefault the hook env
+    /// injection and the `IslandState` expired-dim mirror use, so the
+    /// hook, server, and UI all give up at the same instant.
     private func handleResponsePoll(_ connection: NWConnection, requestPath: String) {
         let timeoutDecision = PermissionDecision(behavior: "timeout", rule: nil)
 
@@ -281,11 +287,18 @@ class LocalServer {
             return
         }
 
+        let timeoutSeconds = positiveDouble(
+            dynamicIslandUserDefaults,
+            forKey: permissionTimeoutKey,
+            default: PermissionTimeoutSeconds
+        )
+        let timeoutNanos = UInt64(timeoutSeconds * 1_000_000_000)
+
         Task {
             let result = await responseStore.wait(
                 eventID: eventID,
                 timeoutValue: timeoutDecision,
-                timeoutNanoseconds: 25_000_000_000
+                timeoutNanoseconds: timeoutNanos
             )
             self.sendHTTP(connection, body: result.jsonBody)
         }
