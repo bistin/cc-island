@@ -196,7 +196,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         stateManager.pushEvent(IslandEvent(
             icon: "🏝️",
-            title: "Dynamic Island",
+            title: "CLI Island",
             subtitle: "Ready — listening on port \(server.port)",
             style: .info,
             duration: 3.0
@@ -211,7 +211,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let menu = NSMenu()
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let header = NSMenuItem(title: "Dynamic Island v\(version)", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: "CLI Island v\(version)", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
@@ -233,7 +233,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
         let quit = NSMenuItem(
-            title: "Quit Dynamic Island",
+            title: "Quit CLI Island",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q")
         menu.addItem(quit)
@@ -344,7 +344,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let alert = NSAlert()
         alert.messageText = "Configure Claude Code hooks?"
         alert.informativeText = """
-            Dynamic Island needs Claude Code hooks to receive tool events.
+            CLI Island needs Claude Code hooks to receive tool events.
 
             Installing will:
               • Copy island-hook to ~/.claude/hooks/dynamic-island-hook

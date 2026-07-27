@@ -1,6 +1,8 @@
-# cc-island
+# CLI Island
 
 把 iPhone 的 Dynamic Island 帶到 Mac 上。利用 MacBook 的瀏海（notch），在兩側即時顯示 AI coding agent 的動態。
+
+> repo 名稱仍是 `cc-island`，app 顯示名稱是 **CLI Island** — 因為它早就不只服務 Claude Code 了。bundle identifier、`.app` 檔名、hook 路徑都維持原樣，升級不會弄丟你的設定。
 
 支援 **Claude Code**、**GitHub Copilot**、**OpenAI Codex** — 一個 hook binary 三家通吃，零外部依賴。
 

@@ -149,7 +149,7 @@ private struct GeneralTab: View {
         let state = loginItem.presentation
 
         Section {
-            Toggle("Open Dynamic Island at login", isOn: Binding(
+            Toggle("Open CLI Island at login", isOn: Binding(
                 get: { state.isOn },
                 set: { loginItem.setEnabled($0) }
             ))

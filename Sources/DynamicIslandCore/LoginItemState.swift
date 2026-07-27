@@ -92,7 +92,7 @@ public func loginItemPresentation(for status: LoginItemStatus) -> LoginItemPrese
     case .requiresApproval:
         return LoginItemPresentation(
             isOn: false, isInteractive: true,
-            message: "Dynamic Island is registered, but login items are "
+            message: "CLI Island is registered, but login items are "
                 + "switched off for it in System Settings. Turn it back on "
                 + "there — this toggle can't override that.",
             showsSystemSettingsButton: true
@@ -100,7 +100,7 @@ public func loginItemPresentation(for status: LoginItemStatus) -> LoginItemPrese
     case .unavailable:
         return LoginItemPresentation(
             isOn: false, isInteractive: false,
-            message: "Launch at login needs the bundled Dynamic Island.app. "
+            message: "Launch at login needs the bundled DynamicIsland.app. "
                 + "This is a bare `swift build` binary, which macOS has no "
                 + "login item for.",
             showsSystemSettingsButton: false
