@@ -20,6 +20,7 @@ struct DynamicIslandApp {
         if args.contains("--uninstall-codex-hooks") {
             runUninstallCLI(target: .codex); exit(0)
         }
+        if args.contains("--login-item-status") { printLoginItemStatus(); exit(0) }
         if args.contains("--help") || args.contains("-h") { printUsage(); exit(0) }
 
         let app = NSApplication.shared
@@ -47,6 +48,20 @@ struct DynamicIslandApp {
             exit(1)
         }
         return url
+    }
+
+    /// Read-only view of what macOS thinks about launching us at login.
+    /// Read-only on purpose: the registration itself stays a deliberate user
+    /// action in Settings, so a stray CLI invocation can't add a login item.
+    /// Reports the same status the Settings toggle renders — run it from
+    /// inside the bundle (`DynamicIsland.app/Contents/MacOS/DynamicIsland`),
+    /// since a bare build has no login item to report on.
+    private static func printLoginItemStatus() {
+        let controller = LoginItemController.shared
+        print("Launch at login: \(controller.status)")
+        if let message = controller.presentation.message {
+            print("  \(message)")
+        }
     }
 
     private static func runInstallCLI(target: HookInstaller.Target) {
@@ -95,12 +110,14 @@ struct DynamicIslandApp {
           --install-codex-hooks                Install Codex hooks (~/.codex/hooks.json) and enable
                                                [features].codex_hooks in ~/.codex/config.toml.
           --uninstall-codex-hooks              Remove Codex hooks from ~/.codex/hooks.json.
+          --login-item-status                  Report whether macOS launches the island at login
+                                               (set it in Settings → General → Startup).
           --help, -h                           Show this help.
         """)
     }
 }
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var panel: IslandPanel!
     var stateManager = IslandStateManager()
     var server: LocalServer!
@@ -204,13 +221,63 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: ",")
         settings.keyEquivalentModifierMask = [.command]
         menu.addItem(settings)
+
+        // Same state as Settings → General → Startup, one click closer.
+        // Its checkmark is refreshed in `menuNeedsUpdate` because macOS can
+        // change it behind our back (System Settings → Login Items).
+        launchAtLoginItem = NSMenuItem(
+            title: "Open at Login",
+            action: #selector(toggleLaunchAtLogin),
+            keyEquivalent: "")
+        menu.addItem(launchAtLoginItem!)
+
         menu.addItem(.separator())
         let quit = NSMenuItem(
             title: "Quit Dynamic Island",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q")
         menu.addItem(quit)
+        // Manual enabling: `menuNeedsUpdate` decides whether "Open at Login"
+        // is clickable, and auto-enabling would overwrite that verdict.
+        menu.autoenablesItems = false
+        menu.delegate = self
         statusItem.menu = menu
+    }
+
+    // MARK: - Launch at login
+
+    /// Retained so `menuNeedsUpdate` can restate its checkmark.
+    private var launchAtLoginItem: NSMenuItem?
+
+    @objc private func toggleLaunchAtLogin() {
+        let controller = LoginItemController.shared
+        controller.setEnabled(!controller.presentation.isOn)
+        refreshLaunchAtLoginItem()
+
+        // `requiresApproval` can't be cleared from here — say so rather than
+        // leaving a checkmark that silently refuses to move.
+        if controller.presentation.showsSystemSettingsButton {
+            let alert = NSAlert()
+            alert.messageText = "Enable in System Settings"
+            alert.informativeText = controller.presentation.message ?? ""
+            alert.addButton(withTitle: "Open Login Items")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                controller.openSystemSettings()
+            }
+        }
+    }
+
+    private func refreshLaunchAtLoginItem() {
+        let controller = LoginItemController.shared
+        controller.refresh()
+        let state = controller.presentation
+        launchAtLoginItem?.state = state.isOn ? .on : .off
+        launchAtLoginItem?.isEnabled = state.isInteractive
+    }
+
+    @objc func menuNeedsUpdate(_ menu: NSMenu) {
+        refreshLaunchAtLoginItem()
     }
 
     /// A horizontal pill — the Dynamic Island silhouette in compact form.

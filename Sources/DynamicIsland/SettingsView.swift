@@ -35,6 +35,9 @@ struct SettingsView: View {
 // MARK: - General
 
 private struct GeneralTab: View {
+    /// Not `@AppStorage` — macOS owns this one (see `LoginItemController`).
+    @ObservedObject private var loginItem = LoginItemController.shared
+
     @AppStorage(enableInlineReplyKey, store: dynamicIslandUserDefaults)
     private var inlineReplyEnabled = false
 
@@ -52,6 +55,8 @@ private struct GeneralTab: View {
 
     var body: some View {
         Form {
+            startupSection
+
             Section {
                 Toggle("Click island to focus terminal tab", isOn: $clickToTerminalEnabled)
                 Text("Tapping a non-decision event jumps to the Terminal.app or iTerm2 tab running the matching session. Falls back to expanding the event when the tab can't be located. Turn off to keep the legacy expand-on-tap behaviour.")
@@ -134,6 +139,47 @@ private struct GeneralTab: View {
             }
         }
         .formStyle(.grouped)
+        // macOS owns this state, so re-read it every time the panel shows —
+        // the user may have flipped it in System Settings meanwhile.
+        .onAppear { loginItem.refresh() }
+    }
+
+    @ViewBuilder
+    private var startupSection: some View {
+        let state = loginItem.presentation
+
+        Section {
+            Toggle("Open Dynamic Island at login", isOn: Binding(
+                get: { state.isOn },
+                set: { loginItem.setEnabled($0) }
+            ))
+            .disabled(!state.isInteractive)
+
+            Text("Starts the island in the background when you log in to macOS, so hook events have somewhere to land without launching the app by hand.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let message = state.message {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if state.showsSystemSettingsButton {
+                Button("Open Login Items settings…") { loginItem.openSystemSettings() }
+            }
+
+            if let error = loginItem.lastError {
+                Label(error, systemImage: "xmark.octagon.fill")
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } header: {
+            Text("Startup").font(.headline)
+        }
     }
 }
 
