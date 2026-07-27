@@ -49,7 +49,7 @@ cd cc-island
 # Build (produces both DynamicIsland app and the hook binary)
 swift build -c release
 
-# Run unit tests (260 tests: hook payload formatting, HTTP parser, screen resolver, and more)
+# Run unit tests (264 tests: hook payload formatting, HTTP parser, screen resolver, and more)
 swift test
 
 # Assemble .app bundle

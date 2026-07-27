@@ -130,6 +130,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // sets a key to 0.
         dynamicIslandUserDefaults.register(defaults: [
             stopReplyTimeoutKey: StopReplyTimeoutSeconds,
+            permissionTimeoutKey: PermissionTimeoutSeconds,
             screenFollowerDwellKey: 200.0,
             // #45: source colours, default to today's hardcoded palette
             claudeColorHexKey: defaultClaudeColorHex,

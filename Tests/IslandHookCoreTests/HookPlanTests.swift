@@ -252,4 +252,40 @@ final class HookPlanTests: XCTestCase {
         )
         XCTAssertEqual(plan?.stopReplyTimeoutSeconds, 12.5)
     }
+
+    // MARK: - permissionTimeoutSeconds
+
+    func testPermissionTimeout_envSetToValid_usesParsedValue() {
+        let plan = parseHookPlan(
+            payload: ["hook_event_name": "PermissionRequest", "cwd": "/tmp"],
+            env: ["CC_ISLAND_PERMISSION_TIMEOUT": "120"]
+        )
+        XCTAssertEqual(plan?.permissionTimeoutSeconds, 120)
+    }
+
+    func testPermissionTimeout_envUnset_fallsBackToDefault() {
+        let plan = parseHookPlan(
+            payload: ["hook_event_name": "PermissionRequest", "cwd": "/tmp"]
+        )
+        XCTAssertEqual(plan?.permissionTimeoutSeconds, PermissionTimeoutSeconds)
+    }
+
+    func testPermissionTimeout_envInvalid_fallsBackToDefault() {
+        // Non-numeric, zero, and negative all silently break the long-poll
+        // (instant or never), so each must fall back to the default.
+        for raw in ["fivemin", "0", "0.0", "-5"] {
+            let plan = parseHookPlan(
+                payload: ["hook_event_name": "PermissionRequest", "cwd": "/tmp"],
+                env: ["CC_ISLAND_PERMISSION_TIMEOUT": raw]
+            )
+            XCTAssertEqual(
+                plan?.permissionTimeoutSeconds, PermissionTimeoutSeconds,
+                "value \(raw) should fall back to default"
+            )
+        }
+    }
+
+    func testPermissionTimeout_defaultIsFiveMinutes() {
+        XCTAssertEqual(PermissionTimeoutSeconds, 300)
+    }
 }

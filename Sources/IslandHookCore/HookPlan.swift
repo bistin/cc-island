@@ -33,6 +33,13 @@ public struct HookPlan {
     /// `longPollResponse` and is mirrored into the `~/.claude/settings.json`
     /// Stop entry's `timeout` field on install.
     public let stopReplyTimeoutSeconds: TimeInterval
+    /// PermissionRequest long-poll horizon in seconds. Sourced from
+    /// `CC_ISLAND_PERMISSION_TIMEOUT` at hook-spawn time; falls back to
+    /// `PermissionTimeoutSeconds` (300) when the env var is missing,
+    /// non-numeric, or `<= 0`. Drives `island-hook` PermissionRequest
+    /// `longPollResponse` and is mirrored into the `~/.claude/settings.json`
+    /// PermissionRequest entry's `timeout` field on install.
+    public let permissionTimeoutSeconds: TimeInterval
     /// Controlling TTY of the Claude Code / Copilot / Codex process that
     /// invoked this hook (e.g. `/dev/ttys003`). Forwarded into the event
     /// payload via `decorate` so a click on the island can ask
@@ -50,6 +57,7 @@ public struct HookPlan {
         cpError: String?,
         inlineReplyEnabled: Bool = false,
         stopReplyTimeoutSeconds: TimeInterval = StopReplyTimeoutSeconds,
+        permissionTimeoutSeconds: TimeInterval = PermissionTimeoutSeconds,
         tty: String? = nil
     ) {
         self.payload = payload
@@ -67,6 +75,7 @@ public struct HookPlan {
         self.cpError = cpError
         self.inlineReplyEnabled = inlineReplyEnabled
         self.stopReplyTimeoutSeconds = stopReplyTimeoutSeconds
+        self.permissionTimeoutSeconds = permissionTimeoutSeconds
         self.tty = tty
     }
 }
@@ -167,6 +176,18 @@ public func parseHookPlan(
         return parsed
     }()
 
+    // PermissionRequest long-poll horizon — env var injected by
+    // HookInstaller from the user's UserDefault. Same reject-bad-input
+    // policy as the Stop timeout above.
+    let permissionTimeoutSeconds: TimeInterval = {
+        guard let raw = env["CC_ISLAND_PERMISSION_TIMEOUT"],
+              let parsed = TimeInterval(raw),
+              parsed > 0 else {
+            return PermissionTimeoutSeconds
+        }
+        return parsed
+    }()
+
     return HookPlan(
         payload: payload, source: source, event: event, tool: tool,
         cwd: cwd, project: project, displayProject: displayProject,
@@ -176,6 +197,7 @@ public func parseHookPlan(
         cpError: cpError,
         inlineReplyEnabled: env["CC_ISLAND_INLINE_REPLY"] == "1",
         stopReplyTimeoutSeconds: stopReplyTimeoutSeconds,
+        permissionTimeoutSeconds: permissionTimeoutSeconds,
         tty: tty
     )
 }
