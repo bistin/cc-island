@@ -161,7 +161,7 @@ final class HookPlanTests: XCTestCase {
     // MARK: - shouldCachePreToolUse
 
     func testShouldCachePreToolUse() {
-        let cacheable = ["Edit", "Write", "Bash", "MultiEdit", "NotebookEdit"]
+        let cacheable = ["Edit", "Write", "Bash", "MultiEdit", "NotebookEdit", "apply_patch"]
         let notCacheable = ["Read", "Grep", "Glob", "Agent"]
         for tool in cacheable {
             let plan = parseHookPlan(payload: [

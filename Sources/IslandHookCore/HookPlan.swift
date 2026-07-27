@@ -184,7 +184,7 @@ extension HookPlan {
     /// Whether this PreToolUse should cache its payload to /tmp for the next
     /// PermissionRequest to read (FIFO context correlation).
     public var shouldCachePreToolUse: Bool {
-        ["Edit", "Write", "Bash", "MultiEdit", "NotebookEdit"].contains(tool)
+        ["Edit", "Write", "Bash", "MultiEdit", "NotebookEdit", "apply_patch"].contains(tool)
     }
 
     /// Adds project / agent / source fields common to every event.
