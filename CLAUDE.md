@@ -40,6 +40,23 @@ The panel follows the user's cursor across screens. `ScreenFollower` polls `NSEv
 - `action` — persistent, pulsing blue, expanded view with Allow/Deny buttons; used for `PermissionRequest`
 - `reminder` — pulsing blue, no buttons; used when attention is needed but there's nothing to decide
 
+## App icon
+
+`scripts/render-app-icon.swift` draws the icon with AppKit and writes an `.iconset`; `iconutil -c icns` turns that into `AppIcon.icns`, referenced from `Info.plist` via `CFBundleIconFile` and copied into `Contents/Resources` at bundle time. Keeping it as code rather than a checked-in binary means it stays regenerable and diffable, and it holds the same no-external-dependencies line as the app.
+
+The mark is a black island pill holding a shell prompt — the pill is the notch, the `>` and block cursor say the events come from CLI agents — coloured in the app's own source palette (Claude orange, Codex green). Art is authored on a 1024 grid with the standard 100pt Big Sur margin and re-drawn as vectors at each size rather than downsampled. At 32px and below the cursor and chevron smudge together, so those sizes drop the cursor and enlarge the chevron (`drawIcon(simplified:)`).
+
+## Launch at login
+
+`LoginItemController` (app layer) wraps `SMAppService.mainApp` — macOS 13+, no helper bundle, no LaunchAgent plist. The system owns the state, so there is deliberately **no UserDefaults mirror**: every read goes back to `SMAppService.mainApp.status` and `refresh()` runs whenever a surface showing it appears (Settings `.onAppear`, `menuNeedsUpdate` for the menu bar item). A cached copy would let the UI claim "on" for an app macOS has already stopped launching.
+
+Decision logic lives in `DynamicIslandCore.LoginItemState` so it's unit-testable without a live registration: `loginItemAction(for:desired:)` (what to call) and `loginItemPresentation(for:)` (what to render). Two states carry the non-obvious rules:
+
+- `requiresApproval` — registered, but the user switched it off in System Settings. Calling `register()` again returns success and changes nothing, so the action is `.none` and the UI points at System Settings instead of leaving a toggle that silently springs back.
+- `notFound` — despite the name, this is the ordinary never-registered state for a fresh `.app` on macOS 26 (verified on 26.5.2, unchanged by `lsregister -f`). Presented as a plain "off"; treating it as an error would fire a false alarm on every first launch.
+
+Surfaces: Settings → General → Startup, the menu bar's "Open at Login" item, and `--login-item-status` (read-only; registration stays a deliberate user action so a stray CLI call can't add a login item). Running a bare `swift build` binary reports `unavailable` and disables the toggle — `Bundle.main` isn't an `.app` there, so there's nothing for `SMAppService` to register.
+
 ## Hook Integration
 
 `Sources/island-hook/main.swift` is the canonical universal hook entry point — a Foundation-only Swift binary (~109KB) that handles Claude Code, GitHub Copilot, and OpenAI Codex by sniffing payload shape (`hook_event_name` casing vs `toolName` at root). Reads JSON from stdin, dispatches via `IslandHookCore` (pure-logic library, fully unit-tested), and POSTs formatted events to `127.0.0.1:9423/event`. Must exit 0 so it never blocks the caller. PermissionRequest is the only event that emits stdout (provider-specific allow/deny JSON).

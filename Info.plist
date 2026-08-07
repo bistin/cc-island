@@ -4,12 +4,14 @@
 <dict>
     <key>CFBundleExecutable</key>
     <string>DynamicIsland</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.cc-island.dynamic-island</string>
     <key>CFBundleName</key>
-    <string>Dynamic Island</string>
+    <string>CLI Island</string>
     <key>CFBundleDisplayName</key>
-    <string>Dynamic Island</string>
+    <string>CLI Island</string>
     <key>CFBundleVersion</key>
     <string>1.9.0</string>
     <key>CFBundleShortVersionString</key>
@@ -25,6 +27,6 @@
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Dynamic Island brings your terminal tab to the front when you tap the island.</string>
+    <string>CLI Island brings your terminal tab to the front when you tap the island.</string>
 </dict>
 </plist>
