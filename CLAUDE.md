@@ -59,7 +59,7 @@ Surfaces: Settings → General → Startup, the menu bar's "Open at Login" item,
 
 ## Hook Integration
 
-`Sources/island-hook/main.swift` is the canonical universal hook entry point — a Foundation-only Swift binary (~109KB) that handles Claude Code, GitHub Copilot, and OpenAI Codex by sniffing payload shape (`hook_event_name` casing vs `toolName` at root). Reads JSON from stdin, dispatches via `IslandHookCore` (pure-logic library, fully unit-tested), and POSTs formatted events to `127.0.0.1:9423/event`. Must exit 0 so it never blocks the caller. PermissionRequest is the only event that emits stdout (Claude Code's allow/deny JSON).
+`Sources/island-hook/main.swift` is the canonical universal hook entry point — a Foundation-only Swift binary (~109KB) that handles Claude Code, GitHub Copilot, and OpenAI Codex by sniffing payload shape (`hook_event_name` casing vs `toolName` at root). Reads JSON from stdin, dispatches via `IslandHookCore` (pure-logic library, fully unit-tested), and POSTs formatted events to `127.0.0.1:9423/event`. Must exit 0 so it never blocks the caller. PermissionRequest is the only event that emits stdout (provider-specific allow/deny JSON).
 
 Project label: derived from `cwd` basename; subagent events override it with `↳ <agent_type>`. A deterministic hash picks one of 8 palette colors so concurrent sessions are visually distinguishable.
 
@@ -72,6 +72,7 @@ The binary is deployed to `~/.claude/hooks/dynamic-island-hook` (stable path ind
 CLI:
 - `--install-hooks` / `--uninstall-hooks` — Claude Code (writes `~/.claude/settings.json`)
 - `--install-copilot-hooks [repoPath]` / `--uninstall-copilot-hooks [repoPath]` — Copilot (writes `{repo}/.github/hooks/hooks.json`, defaults to cwd)
+- `--install-codex-hooks` / `--uninstall-codex-hooks` — Codex (writes `~/.codex/hooks.json`; migrates deprecated `[features].codex_hooks` to `[features].hooks` when present). New or changed definitions must be reviewed in Codex via `/hooks`.
 
 Copilot uses a different schema: top-level `version: 1`, camelCase events (`preToolUse`, `postToolUse`, `userPromptSubmitted`, `sessionStart`, `sessionEnd`, `errorOccurred`), no matcher, fields `{type, bash, timeoutSec}`.
 

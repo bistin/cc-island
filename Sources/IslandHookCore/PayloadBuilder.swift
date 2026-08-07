@@ -50,6 +50,19 @@ public func buildPreToolUsePayload(_ plan: HookPlan) -> [String: Any] {
             "style": "claude", "duration": 3,
         ])
 
+    case "apply_patch":
+        let patch = plan.toolInputString("command")
+        let paths = applyPatchFilePaths(patch)
+        let firstName = paths.first.map(basename) ?? "files"
+        let subtitle = paths.count > 1 ? "\(firstName) +\(paths.count - 1)" : firstName
+        var payload: [String: Any] = [
+            "title": "Editing", "subtitle": subtitle,
+            "style": "claude", "duration": 3,
+        ]
+        let preview = buildApplyPatchPreview(patch)
+        if !preview.isEmpty { payload["detail"] = preview }
+        return plan.decorate(payload)
+
     case "Grep":
         var pattern = plan.toolInputString("pattern")
         if pattern.isEmpty { pattern = (plan.copilotToolArgs["pattern"] as? String) ?? "" }
@@ -89,10 +102,11 @@ public func buildPreToolUsePayload(_ plan: HookPlan) -> [String: Any] {
 /// Returns nil if nothing to emit for this PostToolUse.
 public func buildPostToolUsePayload(_ plan: HookPlan) -> [String: Any]? {
     switch plan.tool {
-    case "Edit", "Write":
+    case "Edit", "Write", "apply_patch":
         let fname = basename(plan.filePath)
+        let applyPatchName = applyPatchFilePaths(plan.toolInputString("command")).first.map(basename)
         return plan.decorate([
-            "title": "Saved", "subtitle": fname.isEmpty ? "file" : fname,
+            "title": "Saved", "subtitle": applyPatchName ?? (fname.isEmpty ? "file" : fname),
             "style": "success", "duration": 1.5,
         ])
     default:
@@ -164,6 +178,7 @@ public func buildPermissionRequestPayload(
     cachedToolName: String? = nil
 ) -> [String: Any] {
     let toolName = (plan.payload["tool_name"] as? String) ?? "tool"
+    let displayToolName = toolName == "apply_patch" ? "Edit" : toolName
     var toolDetail = String(
         (plan.toolInputString("command").isEmpty
             ? plan.toolInputString("file_path")
@@ -196,9 +211,17 @@ public func buildPermissionRequestPayload(
         }
     }
 
+    if toolName == "apply_patch" {
+        let effectiveInput = (cachedToolName == toolName ? cachedInput : nil) ?? plan.toolInput
+        let patch = (effectiveInput["command"] as? String) ?? ""
+        let paths = applyPatchFilePaths(patch)
+        toolDetail = paths.first.map(basename) ?? "files"
+        diff = buildApplyPatchPreview(patch)
+    }
+
     var p: [String: Any] = [
         "title": "Permission",
-        "subtitle": "\(toolName): \(toolDetail)",
+        "subtitle": "\(displayToolName): \(toolDetail)",
         "style": "action",
     ]
     if !diff.isEmpty { p["detail"] = diff }

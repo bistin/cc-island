@@ -52,7 +52,7 @@ cd cc-island
 # Build (produces both DynamicIsland app and the hook binary)
 swift build -c release
 
-# Run unit tests (262 tests: hook payload formatting, HTTP parser, screen resolver, and more)
+# Run unit tests (264 tests: hook payload formatting, HTTP parser, screen resolver, and more)
 swift test
 
 # Render the app icon (AppKit only — no design tool needed)
@@ -135,7 +135,9 @@ DynamicIsland --install-codex-hooks
 
 - 把 `island-hook` binary 部署到 `~/.codex/hooks/dynamic-island-hook`
 - 在 `~/.codex/hooks.json` 註冊 Codex 支援的事件
-- 在 `~/.codex/config.toml` 啟用 `codex_hooks = true`
+- Hooks 預設已啟用；若 `~/.codex/config.toml` 還有 deprecated 的 `codex_hooks`，會遷移成 canonical 的 `hooks`
+
+安裝或更新 hook definition 後，在 Codex 輸入 `/hooks`，review 並 trust Dynamic Island hooks。Codex 會依 definition hash 管理信任，內容變更後需要重新確認。
 
 移除：
 
@@ -145,14 +147,17 @@ DynamicIsland --uninstall-codex-hooks
 
 產生的 `~/.codex/hooks.json` 會是官方 Codex hooks 文件格式，並透過 `ISLAND_SOURCE=codex` 讓 island 使用綠色配色。註冊事件如下：
 
-- `SessionStart`（matcher: `startup|resume`）
-- `PreToolUse`（matcher: `Bash`）
-- `PermissionRequest`（matcher: `Bash`）
-- `PostToolUse`（matcher: `Bash`）
+- `SessionStart`（matcher: `startup|resume|clear|compact`）
+- `PreToolUse`（matcher: `Bash|apply_patch`）
+- `PermissionRequest`（matcher: `Bash|apply_patch`）
+- `PostToolUse`（matcher: `Bash|apply_patch`）
+- `PreCompact` / `PostCompact`
+- `SubagentStart` / `SubagentStop`
 - `UserPromptSubmit`
 - `Stop`
+- `SessionEnd`
 
-> Codex 官方文件目前指出 `PreToolUse` / `PermissionRequest` / `PostToolUse` 的 matcher 主要作用在 `Bash`，`SessionStart` 則是 `startup|resume`。`UserPromptSubmit` 和 `Stop` 不需要 matcher。
+> 預設聚焦 shell、檔案修改與生命週期事件，避免把所有 MCP/local tool activity 都推到瀏海造成干擾。Codex 目前也支援以 tool name matcher 監聽其他 local 與 MCP tools。
 
 ---
 

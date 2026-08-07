@@ -303,6 +303,10 @@ private struct HooksTab: View {
                 }
                 statusLabel(codexStatus)
             }
+            Text("After installing or changing hooks, open `/hooks` in Codex to review and trust the updated definitions.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         } header: {
             Text("Codex").font(.headline)
         }

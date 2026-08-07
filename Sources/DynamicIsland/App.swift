@@ -70,8 +70,14 @@ struct DynamicIslandApp {
             print("Installed \(target.displayName) hooks:")
             print("  script:   \(target.deployedHookURL.path)")
             print("  settings: \(target.settingsURL.path)")
+            if case .codex = target {
+                print("Next: open /hooks in Codex and trust the Dynamic Island hooks.")
+            }
         case .alreadyCurrent:
             print("\(target.displayName) hooks already up to date.")
+            if case .codex = target {
+                print("If they have not run yet, open /hooks in Codex and verify they are trusted.")
+            }
         case .skipped(let msg):
             FileHandle.standardError.write(Data("Skipped: \(msg)\n".utf8))
             exit(1)
@@ -107,8 +113,8 @@ struct DynamicIslandApp {
           --install-copilot-hooks [repoPath]   Install Copilot hooks to {repoPath}/.github/hooks/hooks.json
                                                (defaults to current directory).
           --uninstall-copilot-hooks [repoPath] Remove Copilot hooks from that repo.
-          --install-codex-hooks                Install Codex hooks (~/.codex/hooks.json) and enable
-                                               [features].codex_hooks in ~/.codex/config.toml.
+          --install-codex-hooks                Install Codex hooks (~/.codex/hooks.json); migrates
+                                               legacy [features].codex_hooks to the canonical hooks key.
           --uninstall-codex-hooks              Remove Codex hooks from ~/.codex/hooks.json.
           --login-item-status                  Report whether macOS launches the island at login
                                                (set it in Settings → General → Startup).

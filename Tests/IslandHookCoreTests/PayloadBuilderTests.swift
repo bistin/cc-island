@@ -129,6 +129,26 @@ final class PayloadBuilderTests: XCTestCase {
         XCTAssertEqual(buildPreToolUsePayload(p)["title"] as? String, "search")
     }
 
+    func testPreToolUse_CodexApplyPatch_showsFileAndPreview() {
+        let p = plan([
+            "hook_event_name": "PreToolUse", "tool_name": "apply_patch",
+            "tool_input": ["command": """
+                *** Begin Patch
+                *** Update File: Sources/App.swift
+                @@
+                -old
+                +new
+                *** End Patch
+                """],
+            "cwd": "/tmp/demo",
+        ], env: ["ISLAND_SOURCE": "codex"])
+        let body = buildPreToolUsePayload(p)
+        XCTAssertEqual(body["title"] as? String, "Editing")
+        XCTAssertEqual(body["subtitle"] as? String, "App.swift")
+        XCTAssertEqual(body["detail"] as? String, "@@ Sources/App.swift\n@@\n-old\n+new")
+        XCTAssertEqual(body["source"] as? String, "codex")
+    }
+
     // MARK: - PostToolUse
 
     func testPostToolUse_EditEmitsSaved() {
@@ -150,6 +170,17 @@ final class PayloadBuilderTests: XCTestCase {
             "cwd": "/tmp",
         ])
         XCTAssertNil(buildPostToolUsePayload(p))
+    }
+
+    func testPostToolUse_CodexApplyPatch_emitsSavedFile() {
+        let p = plan([
+            "hook_event_name": "PostToolUse", "tool_name": "apply_patch",
+            "tool_input": ["command": "*** Update File: Sources/App.swift"],
+            "cwd": "/tmp",
+        ], env: ["ISLAND_SOURCE": "codex"])
+        let body = buildPostToolUsePayload(p)
+        XCTAssertEqual(body?["title"] as? String, "Saved")
+        XCTAssertEqual(body?["subtitle"] as? String, "App.swift")
     }
 
     // MARK: - Failure events
@@ -471,6 +502,24 @@ final class PayloadBuilderTests: XCTestCase {
             "cwd": "/tmp",
         ], env: ["ISLAND_SOURCE": "codex"])
         let body = buildPermissionRequestPayload(p)
+        XCTAssertNil(body["suggested_rule"])
+    }
+
+    func testPermissionRequest_CodexApplyPatch_showsEditPreview() {
+        let p = plan([
+            "hook_event_name": "PermissionRequest", "tool_name": "apply_patch",
+            "tool_input": ["command": """
+                *** Begin Patch
+                *** Update File: Sources/App.swift
+                -old
+                +new
+                *** End Patch
+                """],
+            "cwd": "/tmp",
+        ], env: ["ISLAND_SOURCE": "codex"])
+        let body = buildPermissionRequestPayload(p)
+        XCTAssertEqual(body["subtitle"] as? String, "Edit: App.swift")
+        XCTAssertEqual(body["detail"] as? String, "@@ Sources/App.swift\n-old\n+new")
         XCTAssertNil(body["suggested_rule"])
     }
 

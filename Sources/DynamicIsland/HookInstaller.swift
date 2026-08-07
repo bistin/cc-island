@@ -298,17 +298,26 @@ enum HookInstaller {
                 ]
             case .codex:
                 return [
-                    ("SessionStart",      "startup|resume", 5),
-                    ("PreToolUse",        "Bash",           5),
-                    ("PermissionRequest", "Bash",
+                    ("SessionStart",      "startup|resume|clear|compact", 5),
+                    // Codex reports file edits as `apply_patch`. Keep the
+                    // default signal focused on shell + edits; matching all
+                    // local and MCP tools is too noisy for an always-visible UI.
+                    ("PreToolUse",        "Bash|apply_patch",              5),
+                    ("PermissionRequest", "Bash|apply_patch",
                         Int(ceil(positiveDouble(
                             dynamicIslandUserDefaults,
                             forKey: permissionTimeoutKey,
                             default: PermissionTimeoutSeconds
                         ) + 5))),
-                    ("PostToolUse",       "Bash",           5),
-                    ("UserPromptSubmit",  "",               5),
-                    ("Stop",              "",              30),
+                    ("PostToolUse",       "Bash|apply_patch",              5),
+                    ("PreCompact",        "manual|auto",                   5),
+                    ("PostCompact",       "manual|auto",                   5),
+                    ("SubagentStart",     "",                              5),
+                    ("SubagentStop",      "",                              5),
+                    ("UserPromptSubmit",  "",                              5),
+                    ("Stop",              "",                             30),
+                    // Codex caps SessionEnd command hooks at 3 seconds.
+                    ("SessionEnd",        "other",                         3),
                 ]
             }
         }
@@ -428,7 +437,7 @@ enum HookInstaller {
             if !found { return false }
         }
 
-        if case .codex = target, !codexHooksFeatureEnabled() {
+        if case .codex = target, !codexHooksAreEnabled() {
             return false
         }
 
@@ -635,110 +644,27 @@ enum HookInstaller {
 
     // MARK: - Codex config.toml
 
-    private static func codexHooksFeatureEnabled() -> Bool {
-        guard let url = Target.codex.codexConfigURL,
-              let content = try? String(contentsOf: url, encoding: .utf8) else {
-            return false
-        }
-        return tomlBoolValue(for: "codex_hooks", inSection: "features", content: content) == true
+    private static func codexHooksAreEnabled() -> Bool {
+        guard let url = Target.codex.codexConfigURL else { return true }
+        guard FileManager.default.fileExists(atPath: url.path) else { return true }
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return false }
+        return codexHooksFeatureEnabled(in: content)
     }
 
     private static func ensureCodexHooksFeatureEnabled() throws {
         guard let url = Target.codex.codexConfigURL else { return }
         let fingerprint = try AtomicFileWriter.fingerprint(at: url)
-        let existing: String
-        if fingerprint.exists {
-            existing = try String(contentsOf: url, encoding: .utf8)
-        } else {
-            existing = ""
-        }
-        let updated = setTomlBool(true, for: "codex_hooks", inSection: "features", content: existing)
+        // Hooks are enabled by default, so a missing config needs no write.
+        guard fingerprint.exists else { return }
+        let existing = try String(contentsOf: url, encoding: .utf8)
+        let updated = enablingCodexHooks(in: existing)
+        guard updated != existing else { return }
 
         try AtomicFileWriter.write(
             Data(updated.utf8),
             to: url,
             expectedFingerprint: fingerprint
         )
-    }
-
-    private static func tomlBoolValue(
-        for key: String,
-        inSection section: String,
-        content: String
-    ) -> Bool? {
-        var currentSection: String?
-        for rawLine in content.split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = rawLine.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("[") && line.hasSuffix("]") {
-                currentSection = String(line.dropFirst().dropLast())
-                continue
-            }
-            guard currentSection == section else { continue }
-            let bare = stripTomlComment(from: line)
-            guard let eq = bare.firstIndex(of: "=") else { continue }
-            let lhs = bare[..<eq].trimmingCharacters(in: .whitespaces)
-            guard lhs == key else { continue }
-            let rhs = bare[bare.index(after: eq)...].trimmingCharacters(in: .whitespaces).lowercased()
-            if rhs == "true" { return true }
-            if rhs == "false" { return false }
-        }
-        return nil
-    }
-
-    private static func setTomlBool(
-        _ value: Bool,
-        for key: String,
-        inSection section: String,
-        content: String
-    ) -> String {
-        let lineValue = "\(key) = \(value ? "true" : "false")"
-        if content.isEmpty {
-            return "[\(section)]\n\(lineValue)\n"
-        }
-
-        var lines = content.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        var sectionStart: Int?
-        var sectionEnd = lines.count
-
-        for (idx, raw) in lines.enumerated() {
-            let trimmed = raw.trimmingCharacters(in: .whitespaces)
-            if trimmed == "[\(section)]" {
-                sectionStart = idx
-                sectionEnd = lines.count
-                for next in (idx + 1)..<lines.count {
-                    let nextTrimmed = lines[next].trimmingCharacters(in: .whitespaces)
-                    if nextTrimmed.hasPrefix("[") && nextTrimmed.hasSuffix("]") {
-                        sectionEnd = next
-                        break
-                    }
-                }
-                break
-            }
-        }
-
-        if let sectionStart {
-            for idx in (sectionStart + 1)..<sectionEnd {
-                let stripped = stripTomlComment(from: lines[idx].trimmingCharacters(in: .whitespaces))
-                guard let eq = stripped.firstIndex(of: "=") else { continue }
-                let lhs = stripped[..<eq].trimmingCharacters(in: .whitespaces)
-                if lhs == key {
-                    lines[idx] = lineValue
-                    return lines.joined(separator: "\n")
-                }
-            }
-            lines.insert(lineValue, at: sectionStart + 1)
-            return lines.joined(separator: "\n")
-        }
-
-        var updated = content
-        if !updated.hasSuffix("\n") { updated += "\n" }
-        updated += "\n[\(section)]\n\(lineValue)\n"
-        return updated
-    }
-
-    private static func stripTomlComment(from line: String) -> String {
-        guard let idx = line.firstIndex(of: "#") else { return line }
-        return String(line[..<idx]).trimmingCharacters(in: .whitespaces)
     }
 
     private static func shellQuote(_ string: String) -> String {

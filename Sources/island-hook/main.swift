@@ -4,7 +4,7 @@
 // Island app on 127.0.0.1:9423.
 //
 // PermissionRequest is the only event that produces stdout: it long-polls
-// /response and emits the JSON allow/deny decision Claude Code expects.
+// /response and emits the JSON allow/deny decision the active provider expects.
 
 import Foundation
 import IslandHookCore

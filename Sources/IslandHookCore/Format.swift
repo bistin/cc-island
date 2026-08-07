@@ -40,3 +40,42 @@ public func buildEditDiff(old: String, new: String) -> String {
     if !new.isEmpty { parts.append(diffLines(new, prefix: "+ ")) }
     return parts.joined(separator: "\n")
 }
+
+/// File paths declared by an `apply_patch` command, in patch order.
+public func applyPatchFilePaths(_ patch: String) -> [String] {
+    let markers = ["*** Update File: ", "*** Add File: ", "*** Delete File: "]
+    return patch.split(separator: "\n", omittingEmptySubsequences: false).compactMap { raw in
+        let line = String(raw)
+        guard let marker = markers.first(where: { line.hasPrefix($0) }) else { return nil }
+        let path = String(line.dropFirst(marker.count)).trimmingCharacters(in: .whitespaces)
+        return path.isEmpty ? nil : path
+    }
+}
+
+/// Compact, color-friendly preview for Codex's `apply_patch` tool input.
+/// Wrapper lines are removed, file markers become `@@ filename`, and long
+/// patches are capped so one tool event cannot make the expanded island huge.
+public func buildApplyPatchPreview(
+    _ patch: String,
+    maxLines: Int = 12,
+    maxChars: Int = 100
+) -> String {
+    guard !patch.isEmpty else { return "" }
+    let wrappers = Set(["*** Begin Patch", "*** End Patch"])
+    let markers = ["*** Update File: ", "*** Add File: ", "*** Delete File: "]
+    let normalized = patch.split(separator: "\n", omittingEmptySubsequences: false).compactMap { raw -> String? in
+        let line = String(raw)
+        if wrappers.contains(line) { return nil }
+        if let marker = markers.first(where: { line.hasPrefix($0) }) {
+            let path = String(line.dropFirst(marker.count)).trimmingCharacters(in: .whitespaces)
+            return "@@ \(path)"
+        }
+        return line.count > maxChars ? String(line.prefix(maxChars)) + "…" : line
+    }
+
+    var preview = Array(normalized.prefix(maxLines))
+    if normalized.count > maxLines {
+        preview.append("  (+\(normalized.count - maxLines) more)")
+    }
+    return preview.joined(separator: "\n")
+}

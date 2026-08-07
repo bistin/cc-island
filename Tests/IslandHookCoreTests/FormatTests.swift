@@ -89,4 +89,44 @@ final class FormatTests: XCTestCase {
         let out = buildEditDiff(old: "foo\nbar", new: "FOO\nBAR")
         XCTAssertEqual(out, "- foo\n- bar\n+ FOO\n+ BAR")
     }
+
+    // MARK: - apply_patch
+
+    func testApplyPatchFilePaths_extractsAllOperations() {
+        let patch = """
+        *** Begin Patch
+        *** Update File: Sources/App.swift
+        @@
+        -old
+        +new
+        *** Add File: Tests/AppTests.swift
+        +test
+        *** End Patch
+        """
+        XCTAssertEqual(
+            applyPatchFilePaths(patch),
+            ["Sources/App.swift", "Tests/AppTests.swift"]
+        )
+    }
+
+    func testBuildApplyPatchPreview_removesWrappersAndKeepsDiff() {
+        let patch = """
+        *** Begin Patch
+        *** Update File: Sources/App.swift
+        @@
+        -old
+        +new
+        *** End Patch
+        """
+        XCTAssertEqual(
+            buildApplyPatchPreview(patch),
+            "@@ Sources/App.swift\n@@\n-old\n+new"
+        )
+    }
+
+    func testBuildApplyPatchPreview_capsLongPatch() {
+        let patch = (1...20).map { "+line \($0)" }.joined(separator: "\n")
+        let preview = buildApplyPatchPreview(patch, maxLines: 3)
+        XCTAssertEqual(preview, "+line 1\n+line 2\n+line 3\n  (+17 more)")
+    }
 }
