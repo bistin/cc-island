@@ -50,6 +50,8 @@ The mark is a black island pill holding a shell prompt — the pill is the notch
 
 `LoginItemController` (app layer) wraps `SMAppService.mainApp` — macOS 13+, no helper bundle, no LaunchAgent plist. The system owns the state, so there is deliberately **no UserDefaults mirror**: every read goes back to `SMAppService.mainApp.status` and `refresh()` runs whenever a surface showing it appears (Settings `.onAppear`, `menuNeedsUpdate` for the menu bar item). A cached copy would let the UI claim "on" for an app macOS has already stopped launching.
 
+Settings also refreshes on `NSApplication.didBecomeActiveNotification`, not just `.onAppear`. The window controller is retained by the `AppDelegate` with `isReleasedWhenClosed = false`, so the view stays mounted between opens — and the Login Items deep link doesn't close the window anyway, it sends it behind System Settings. Without the activation hook, the exact round trip the deep link invites (leave, change the setting, come back) lands on a stale toggle. Verified by A/B: with the hook, `refresh()` runs ~250 ms after re-activation; without it, re-activation produces no refresh at all.
+
 Decision logic lives in `DynamicIslandCore.LoginItemState` so it's unit-testable without a live registration: `loginItemAction(for:desired:)` (what to call) and `loginItemPresentation(for:)` (what to render). Two states carry the non-obvious rules:
 
 - `requiresApproval` — registered, but the user switched it off in System Settings. Calling `register()` again returns success and changes nothing, so the action is `.none` and the UI points at System Settings instead of leaving a toggle that silently springs back.
