@@ -25,14 +25,37 @@ jobs:
       - name: Build release
         run: swift build -c release
 
+      - name: Render app icon
+        run: |
+          swift scripts/render-app-icon.swift build/AppIcon.iconset
+          iconutil -c icns build/AppIcon.iconset -o AppIcon.icns
+
       - name: Create .app bundle
         run: |
           mkdir -p DynamicIsland.app/Contents/{MacOS,Resources}
           cp .build/release/DynamicIsland DynamicIsland.app/Contents/MacOS/
           cp .build/release/island-hook   DynamicIsland.app/Contents/Resources/
           chmod +x DynamicIsland.app/Contents/Resources/island-hook
+          cp AppIcon.icns DynamicIsland.app/Contents/Resources/
           cp Info.plist DynamicIsland.app/Contents/
           codesign --force --deep --sign - DynamicIsland.app
+
+      # The bundle declares its icon in Info.plist; if the resource it names is
+      # missing, the release still builds and silently ships a generic icon.
+      # Read the declared name back out rather than hard-coding it, so renaming
+      # the icon can't quietly defeat the check.
+      - name: Verify declared icon is present
+        run: |
+          icon=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' DynamicIsland.app/Contents/Info.plist)
+          for candidate in "DynamicIsland.app/Contents/Resources/$icon" \
+                           "DynamicIsland.app/Contents/Resources/$icon.icns"; do
+            if [ -f "$candidate" ]; then
+              echo "icon present: $candidate"
+              exit 0
+            fi
+          done
+          echo "::error::Info.plist declares CFBundleIconFile '$icon' but no matching resource exists in the bundle"
+          exit 1
 
       - name: Zip app
         run: zip -r DynamicIsland.zip DynamicIsland.app
