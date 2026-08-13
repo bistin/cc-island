@@ -182,6 +182,13 @@ private struct GeneralTab: View {
                 Button("Open Login Items settings…") { loginItem.openSystemSettings() }
             }
 
+            // The way out for someone who wants the registration gone rather
+            // than re-approved. `setEnabled(false)` is what the toggle would
+            // have sent if a vetoed item had an off position to travel to.
+            if state.showsUnregisterButton {
+                Button("Remove login item") { loginItem.setEnabled(false) }
+            }
+
             if let error = loginItem.lastError {
                 Label(error, systemImage: "xmark.octagon.fill")
                     .font(.caption)

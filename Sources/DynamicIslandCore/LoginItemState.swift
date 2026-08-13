@@ -63,17 +63,27 @@ public struct LoginItemPresentation: Equatable, Sendable {
     public let message: String?
     /// Whether to offer a shortcut into System Settings → Login Items.
     public let showsSystemSettingsButton: Bool
+    /// Whether to offer dropping the registration outright.
+    ///
+    /// Only `requiresApproval` needs this. Everywhere else the toggle already
+    /// expresses "off", so unregistering is just flipping it — but a vetoed
+    /// item renders off while still being registered, which leaves the toggle
+    /// with no direction left to travel. Without a button of its own the
+    /// `(.requiresApproval, false)` unregister branch is unreachable from the UI.
+    public let showsUnregisterButton: Bool
 
     public init(
         isOn: Bool,
         isInteractive: Bool,
         message: String?,
-        showsSystemSettingsButton: Bool
+        showsSystemSettingsButton: Bool,
+        showsUnregisterButton: Bool = false
     ) {
         self.isOn = isOn
         self.isInteractive = isInteractive
         self.message = message
         self.showsSystemSettingsButton = showsSystemSettingsButton
+        self.showsUnregisterButton = showsUnregisterButton
     }
 }
 
@@ -90,12 +100,17 @@ public func loginItemPresentation(for status: LoginItemStatus) -> LoginItemPrese
             message: nil, showsSystemSettingsButton: false
         )
     case .requiresApproval:
+        // Not interactive: the toggle already reads off, so the only flip
+        // available is back on, and re-registering is a no-op here. Leaving
+        // it live would give the user a switch that moves and snaps back.
+        // The two things that *can* be done get explicit buttons instead.
         return LoginItemPresentation(
-            isOn: false, isInteractive: true,
+            isOn: false, isInteractive: false,
             message: "CLI Island is registered, but login items are "
                 + "switched off for it in System Settings. Turn it back on "
                 + "there — this toggle can't override that.",
-            showsSystemSettingsButton: true
+            showsSystemSettingsButton: true,
+            showsUnregisterButton: true
         )
     case .unavailable:
         return LoginItemPresentation(

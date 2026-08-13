@@ -66,9 +66,49 @@ final class LoginItemStateTests: XCTestCase {
     func testApprovalVetoReadsOffAndOffersSystemSettings() {
         let state = loginItemPresentation(for: .requiresApproval)
         XCTAssertFalse(state.isOn)
-        XCTAssertTrue(state.isInteractive)
         XCTAssertTrue(state.showsSystemSettingsButton)
         XCTAssertNotNil(state.message)
+    }
+
+    /// The toggle reads off while the item is still registered, so the only
+    /// flip available is back on — and that is a no-op. A live toggle there
+    /// moves and snaps back; the buttons carry the real actions instead.
+    func testApprovalVetoDoesNotLeaveALiveToggle() {
+        XCTAssertFalse(loginItemPresentation(for: .requiresApproval).isInteractive)
+    }
+
+    /// Regression guard for the gap this closes: `.unregister` is reachable
+    /// from `requiresApproval` in the action table, but with the toggle
+    /// pinned off nothing in the UI could ever ask for `desired: false`.
+    /// The button is the only thing that can, so its absence is the bug.
+    func testApprovalVetoOffersUnregisterSoTheActionIsReachable() {
+        let state = loginItemPresentation(for: .requiresApproval)
+        XCTAssertTrue(state.showsUnregisterButton)
+        XCTAssertEqual(
+            loginItemAction(for: .requiresApproval, desired: false), .unregister,
+            "the button sends desired: false — it must still map to unregister"
+        )
+    }
+
+    /// Everywhere else the toggle can already express "off", so a second
+    /// affordance for the same thing would just be clutter.
+    func testOnlyTheVetoedStateOffersUnregister() {
+        let others: [LoginItemStatus] = [.enabled, .notRegistered, .notFound, .unavailable]
+        for status in others {
+            XCTAssertFalse(
+                loginItemPresentation(for: status).showsUnregisterButton,
+                "unexpected unregister button for \(status)"
+            )
+        }
+    }
+
+    /// The menu bar greys its item out via `isInteractive`, so a vetoed item
+    /// would go unclickable — taking the explanation and the Remove button
+    /// with it. Anything with something to say must stay reachable.
+    func testVetoedStateStillHasSomethingToSayWhenNotInteractive() {
+        let state = loginItemPresentation(for: .requiresApproval)
+        XCTAssertFalse(state.isInteractive)
+        XCTAssertTrue(state.isInteractive || state.showsSystemSettingsButton)
     }
 
     /// A fresh install reports `notFound`, so it must look like a plain

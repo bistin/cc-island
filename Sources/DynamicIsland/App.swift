@@ -261,15 +261,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshLaunchAtLoginItem()
 
         // `requiresApproval` can't be cleared from here — say so rather than
-        // leaving a checkmark that silently refuses to move.
+        // leaving a checkmark that silently refuses to move. The alert carries
+        // the same two escape hatches Settings shows, since the menu has no
+        // room for buttons of its own.
         if controller.presentation.showsSystemSettingsButton {
             let alert = NSAlert()
             alert.messageText = "Enable in System Settings"
             alert.informativeText = controller.presentation.message ?? ""
             alert.addButton(withTitle: "Open Login Items")
+            if controller.presentation.showsUnregisterButton {
+                alert.addButton(withTitle: "Remove Login Item")
+            }
             alert.addButton(withTitle: "Cancel")
-            if alert.runModal() == .alertFirstButtonReturn {
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
                 controller.openSystemSettings()
+            case .alertSecondButtonReturn where controller.presentation.showsUnregisterButton:
+                controller.setEnabled(false)
+                refreshLaunchAtLoginItem()
+            default:
+                break
             }
         }
     }
@@ -279,7 +290,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         controller.refresh()
         let state = controller.presentation
         launchAtLoginItem?.state = state.isOn ? .on : .off
-        launchAtLoginItem?.isEnabled = state.isInteractive
+        // A vetoed item is deliberately non-interactive as a toggle, but the
+        // menu is the only place that explains why — greying it out would hide
+        // the explanation and the Remove button along with it.
+        launchAtLoginItem?.isEnabled =
+            state.isInteractive || state.showsSystemSettingsButton
     }
 
     @objc func menuNeedsUpdate(_ menu: NSMenu) {
