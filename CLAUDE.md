@@ -94,6 +94,29 @@ The matcher in `settings.json` intentionally limits `PermissionRequest` to risky
 
 `PreToolUse` for Edit/Write/Bash/MultiEdit/NotebookEdit caches its full payload under `~/Library/Caches/cc-island/pretool/<key>.json`. The next `PermissionRequest` reads it to enrich the dialog: Edit/MultiEdit shows a colored diff (red `-` / green `+`), Write shows a content preview, Bash backfills the command/description if `tool_input` arrived empty. Single-slot per key (the next PreToolUse overwrites) — works because PreToolUse and PermissionRequest fire serially per session. Key resolves via `IslandHookCore.preToolCacheKey`: `session_id` first, then `agent-<agentId>-<project>` for subagents, then `<project>`, then `default`. Pre-v1.7.x layout was `/tmp/di_pretool_${PROJECT}.json` — the old path is world-readable on multi-user machines and predictable across processes, so the cache moved into the per-user `~/Library/Caches/` tree.
 
+## Numbers in the docs
+
+`scripts/check-claimed-numbers.sh` reads every number the docs quote back out of the code it
+describes, and CI fails on a disagreement. It ran red the first time it was pointed at `main`: the README
+claimed 264 tests against a run of 277, and its per-target breakdown said 68 / 20 where the real
+figures were 149 / 128, with `HTTPParserTests` alone at 25 against a claimed 15. Nothing had
+broken — the numbers had simply been true once.
+
+Two rules make it worth having rather than decorative:
+
+- **Truth comes from the code, never from a second copy of the number.** Test counts come from
+  `swift test --list-tests`, which is the list SwiftPM will actually run, so a test that is
+  defined but not collected cannot inflate it. The port comes from `LocalServer.init`, the
+  long-poll horizon from `PermissionTimeoutSeconds`.
+- **A claim that cannot be found is a failure, not a skip.** The obvious shape — "if the pattern
+  matched, compare it" — turns every reworded sentence into a check that quietly stops checking
+  while still reporting green. So the lookup fails loudly instead, which also means a new test
+  target under `Tests/` has to be written into the README before CI will go green with it: the
+  per-target loop iterates over what is on disk rather than over a list kept in the script.
+
+Verified by mutation, not by reading: a wrong number, a reworded sentence, docs that stop naming
+the port, and an undocumented new test target each turn it red.
+
 ## Conventions
 
 - Pure Swift, no external dependencies — only Foundation, AppKit, SwiftUI, Network frameworks
