@@ -1,5 +1,33 @@
 import Foundation
 
+/// The tools whose "execution" *is* a person answering.
+///
+/// Everything else the island shows is something that happened; these are something that has not
+/// happened yet, and will not until somebody looks. That makes them the only events where every
+/// second of not being noticed costs something — measured across the transcripts on one machine,
+/// 58 of these were answered at a median of 71 seconds and a maximum of **10.9 hours**. Ten hours
+/// is not deliberation, it is nobody knowing they were being asked.
+///
+/// **The waiting is visible only through the hook, and that was measured rather than assumed.**
+/// The transcript writes an assistant `tool_use` and its `tool_result` together *after* the tool
+/// returns, so a pending question never reaches disk — see `DynamicIslandCore.TranscriptState`.
+/// `PreToolUse`, though, fires before the tool runs, which for these tools means before the person
+/// answers. Confirmed by capturing the POST from a live session: it arrived **18.3 seconds before
+/// the answer did**, while the menu was still on screen.
+///
+/// One list, used by both halves: the payload builder below and the `PostToolUse` matcher
+/// `HookInstaller` registers. Two lists would agree for exactly as long as nobody edited either,
+/// and the failure mode is the bad one — a waiting event with nothing to clear it.
+public enum InteractiveTools {
+    public static let names = ["AskUserQuestion", "ExitPlanMode"]
+
+    /// The names as Claude Code's `settings.json` wants them.
+    public static var matcher: String { names.joined(separator: "|") }
+
+    public static func contains(_ tool: String) -> Bool { names.contains(tool) }
+}
+
+
 /// Build the island event payload for a PreToolUse. Decorated with
 /// project/agent/source already — callers can POST directly.
 public func buildPreToolUsePayload(_ plan: HookPlan) -> [String: Any] {
@@ -89,6 +117,33 @@ public func buildPreToolUsePayload(_ plan: HookPlan) -> [String: Any] {
             "style": "claude", "duration": 3,
         ])
 
+    case "AskUserQuestion":
+        // `reminder`: pulsing, and deliberately without buttons. The answer is a menu in the
+        // terminal, and a second place to answer it would be a second source of truth.
+        var p: [String: Any] = [
+            "title": "Waiting for you",
+            "subtitle": truncate(firstQuestion(plan).isEmpty ? "a question" : firstQuestion(plan), 35),
+            "style": "reminder",
+            // Set rather than left to the style's default: this payload crosses a version
+            // boundary, and an older island that does not infer it would dismiss the one event
+            // that must not be dismissed.
+            "persistent": true,
+        ]
+        let detail = questionDetail(plan)
+        if !detail.isEmpty { p["detail"] = detail }
+        return plan.decorate(p)
+
+    case "ExitPlanMode":
+        let plan_ = plan.toolInputString("plan")
+        var p: [String: Any] = [
+            "title": "Plan ready",
+            "subtitle": truncate(planHeadline(plan_).isEmpty ? "waiting to start" : planHeadline(plan_), 35),
+            "style": "reminder",
+            "persistent": true,
+        ]
+        if !plan_.isEmpty { p["detail"] = String(plan_.prefix(600)) }
+        return plan.decorate(p)
+
     default:
         let display = plan.tool.replacingOccurrences(
             of: #"^mcp__[^_]*__"#, with: "", options: .regularExpression
@@ -99,8 +154,52 @@ public func buildPreToolUsePayload(_ plan: HookPlan) -> [String: Any] {
     }
 }
 
+/// The first question being asked, or "" when the payload does not carry one.
+func firstQuestion(_ plan: HookPlan) -> String {
+    guard let questions = plan.toolInput["questions"] as? [[String: Any]],
+          let first = questions.first,
+          let text = first["question"] as? String else { return "" }
+    return text.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+/// The questions and what can be picked, for the expanded view.
+func questionDetail(_ plan: HookPlan) -> String {
+    guard let questions = plan.toolInput["questions"] as? [[String: Any]] else { return "" }
+    var lines: [String] = []
+    for question in questions {
+        if let text = question["question"] as? String, !text.isEmpty { lines.append(text) }
+        guard let options = question["options"] as? [[String: Any]] else { continue }
+        for option in options {
+            if let label = option["label"] as? String, !label.isEmpty { lines.append("  · \(label)") }
+        }
+    }
+    return lines.joined(separator: "\n")
+}
+
+/// The first line of a plan that says something, with any markdown heading marker taken off.
+///
+/// Plans open with a `# Title` far more often than not, and `#` in a 35-character ear is a
+/// character spent saying nothing.
+func planHeadline(_ plan: String) -> String {
+    for line in plan.split(separator: "\n", omittingEmptySubsequences: false) {
+        var text = line.trimmingCharacters(in: .whitespaces)
+        while text.hasPrefix("#") { text.removeFirst() }
+        text = text.trimmingCharacters(in: .whitespaces)
+        if !text.isEmpty { return text }
+    }
+    return ""
+}
+
 /// Returns nil if nothing to emit for this PostToolUse.
 public func buildPostToolUsePayload(_ plan: HookPlan) -> [String: Any]? {
+    // The answer arrived. This exists to *replace* the persistent waiting event more than to say
+    // anything itself — a "waiting for you" left on the island after the answer is worse than
+    // never having shown it, because it teaches the reader to ignore the one state that matters.
+    if InteractiveTools.contains(plan.tool) {
+        return plan.decorate([
+            "title": "Answered", "style": "success", "duration": 1.5,
+        ])
+    }
     switch plan.tool {
     case "Edit", "Write", "apply_patch":
         let fname = basename(plan.filePath)

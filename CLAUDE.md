@@ -204,6 +204,41 @@ Safety: `writeSettings` refuses to overwrite the file if existing JSON is invali
 
 PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, PermissionDenied, Notification, Stop, StopFailure, SubagentStart, SubagentStop, UserPromptSubmit, SessionStart, SessionEnd, PreCompact, PostCompact. `PostToolUseFailure` / `StopFailure` replace fragile grep-based error detection; `PreCompact` / `PostCompact` show context compaction progress.
 
+## Waiting for a person
+
+`AskUserQuestion` and `ExitPlanMode` are the tools whose *execution is a person answering*.
+Everything else the island shows is something that happened; these are something that has not
+happened yet and will not until somebody looks — which makes them the only events where every
+second of going unnoticed costs something. Across the transcripts on the development machine, 58
+of them were answered at a median of 71 seconds and a maximum of **10.9 hours**. Ten hours is not
+deliberation, it is nobody knowing they were being asked.
+
+**The waiting is visible only through the hook, and both halves of that were measured.** The
+transcript cannot show it: Claude Code writes an assistant `tool_use` and its `tool_result`
+together *after* the tool returns, so a pending question never reaches disk (see "Session state
+from the transcript"). `PreToolUse` can, because it fires before the tool runs — which for these
+tools means before the person answers. Confirmed by standing a capture server on 9423 and
+triggering a real `AskUserQuestion`: the POST arrived **18.3 seconds before the answer**, while the
+menu was still on screen. cc-island had been receiving that event all along and throwing it away
+as an ordinary `claude` event that auto-dismissed after two seconds.
+
+`PreToolUse` raises a `reminder` — pulsing, and deliberately **without buttons**: the answer is a
+menu in the terminal, and a second place to answer it would be a second source of truth. The
+question becomes the subtitle and its options the detail. `persistent` is stated explicitly rather
+than left to the style's default, because the payload crosses a version boundary and an older
+island that did not infer it would dismiss the one event that must not be dismissed.
+
+**Clearing is the half that had to be built.** `PostToolUse`'s matcher was `Bash|Edit|Write`, so
+nothing fired when the question was answered — a "waiting for you" left on the island afterwards is
+worse than never having shown it, because it teaches the reader to ignore the one state that
+matters. `IslandHookCore.InteractiveTools` is the single list: `HookInstaller` appends
+`InteractiveTools.matcher` to the `PostToolUse` registration, and the payload builder tests the
+same names. Two lists would agree for exactly as long as nobody edited either, and the failure
+mode is the bad one.
+
+Changing the matcher makes `settings.json` drift, so the launch-time `syncIfOutdated` reinstalls
+the hooks on its own — nothing for the user to do.
+
 ## Permission Flow
 
 `PermissionRequest` hook POSTs an `action`-style event (Permission title + tool detail), then long-polls `GET /response` for up to the permission-timeout setting (default 300s / 5 min). The UI buttons call `LocalServer.setResponse("allow"|"deny")`, which resumes the waiter. If no waiter is present the value is stored in `pendingResponse` for the next poll — but never persisted past a single delivery, to avoid stale clicks leaking into future requests. On timeout the hook exits silently and Claude Code falls back to its normal permission prompt.

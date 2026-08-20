@@ -540,3 +540,132 @@ final class PayloadBuilderTests: XCTestCase {
         XCTAssertEqual(buildPostCompactPayload(p)["title"] as? String, "Compacted")
     }
 }
+
+// MARK: - The tools whose "execution" is a person answering
+
+final class InteractiveToolPayloadTests: XCTestCase {
+
+    private func plan(tool: String, input: [String: Any]) throws -> HookPlan {
+        try XCTUnwrap(parseHookPlan(payload: [
+            "hook_event_name": "PreToolUse",
+            "tool_name": tool,
+            "session_id": "s1",
+            "cwd": "/Users/x/app/thing",
+            "tool_input": input,
+        ]))
+    }
+
+    private let questions: [String: Any] = [
+        "questions": [[
+            "question": "Which socket should it use?",
+            "header": "Socket",
+            "options": [["label": "default", "description": "the usual one"],
+                        ["label": "named", "description": "tmux -L"]],
+        ]]
+    ]
+
+    // MARK: - Waiting
+
+    /// Persistent is the whole point: this is the one event that must not disappear on its own,
+    /// because the thing it reports has not finished happening.
+    func testAskUserQuestionRaisesAPersistentReminder() throws {
+        let p = buildPreToolUsePayload(try plan(tool: "AskUserQuestion", input: questions))
+        XCTAssertEqual(p["title"] as? String, "Waiting for you")
+        XCTAssertEqual(p["style"] as? String, "reminder")
+        XCTAssertEqual(p["persistent"] as? Bool, true)
+        XCTAssertNil(p["duration"], "a duration on a persistent event is a contradiction")
+    }
+
+    /// Set explicitly even though `reminder` implies it, because the payload crosses a version
+    /// boundary: an older island that does not infer it would dismiss the one event that must not
+    /// be dismissed.
+    func testPersistentIsStatedRatherThanLeftToTheStyleDefault() throws {
+        for tool in InteractiveTools.names {
+            let p = buildPreToolUsePayload(try plan(tool: tool, input: questions))
+            XCTAssertEqual(p["persistent"] as? Bool, true, "\(tool)")
+        }
+    }
+
+    func testTheQuestionItselfIsTheSubtitle() throws {
+        let p = buildPreToolUsePayload(try plan(tool: "AskUserQuestion", input: questions))
+        XCTAssertEqual(p["subtitle"] as? String, "Which socket should it use?")
+    }
+
+    func testTheOptionsAreInTheDetail() throws {
+        let p = buildPreToolUsePayload(try plan(tool: "AskUserQuestion", input: questions))
+        let detail = p["detail"] as? String ?? ""
+        XCTAssertTrue(detail.contains("Which socket should it use?"), detail)
+        XCTAssertTrue(detail.contains("· default"), detail)
+        XCTAssertTrue(detail.contains("· named"), detail)
+    }
+
+    /// A payload that carries no question is still a person waiting; it just cannot say for what.
+    func testAQuestionlessPayloadStillWaits() throws {
+        let p = buildPreToolUsePayload(try plan(tool: "AskUserQuestion", input: [:]))
+        XCTAssertEqual(p["style"] as? String, "reminder")
+        XCTAssertEqual(p["persistent"] as? Bool, true)
+        XCTAssertEqual(p["subtitle"] as? String, "a question")
+        XCTAssertNil(p["detail"])
+    }
+
+    func testExitPlanModeShowsThePlansHeadlineAndBody() throws {
+        let p = buildPreToolUsePayload(try plan(tool: "ExitPlanMode",
+                                            input: ["plan": "# Ship the socket fix\n\nStep one"]))
+        XCTAssertEqual(p["title"] as? String, "Plan ready")
+        XCTAssertEqual(p["subtitle"] as? String, "Ship the socket fix")
+        XCTAssertEqual(p["persistent"] as? Bool, true)
+        XCTAssertTrue((p["detail"] as? String ?? "").contains("Step one"))
+    }
+
+    /// `#` in a 35-character ear is a character spent saying nothing, and plans nearly always
+    /// open with one.
+    func testThePlanHeadlineSkipsMarkdownMarkersAndBlankLines() throws {
+        XCTAssertEqual(planHeadline("\n\n## Second try\nbody"), "Second try")
+        XCTAssertEqual(planHeadline("no heading here"), "no heading here")
+        XCTAssertEqual(planHeadline(""), "")
+        XCTAssertEqual(planHeadline("###\n\nreal line"), "real line")
+    }
+
+    func testAPlanlessPayloadStillWaits() throws {
+        let p = buildPreToolUsePayload(try plan(tool: "ExitPlanMode", input: [:]))
+        XCTAssertEqual(p["subtitle"] as? String, "waiting to start")
+        XCTAssertEqual(p["persistent"] as? Bool, true)
+        XCTAssertNil(p["detail"])
+    }
+
+    // MARK: - Clearing
+
+    /// A "waiting for you" left on the island after the answer is worse than never having shown
+    /// it: it teaches the reader to ignore the one state that matters.
+    func testPostToolUseClearsTheWaitingEvent() throws {
+        for tool in InteractiveTools.names {
+            let raw: [String: Any] = [
+                "hook_event_name": "PostToolUse", "tool_name": tool, "cwd": "/Users/x/app/thing",
+            ]
+            let payload = buildPostToolUsePayload(try XCTUnwrap(parseHookPlan(payload: raw)))
+            let title = payload?["title"] as? String
+            let style = payload?["style"] as? String
+            let persistent = (payload?["persistent"] as? Bool) ?? false
+            XCTAssertEqual(title, "Answered")
+            XCTAssertEqual(style, "success")
+            XCTAssertFalse(persistent)
+        }
+    }
+
+    /// The matcher and the payload builder read one list. Two would agree for exactly as long as
+    /// nobody edited either, and the failure mode is a waiting event nothing clears.
+    func testTheMatcherIsBuiltFromTheSameListThePayloadBuilderUses() throws {
+        XCTAssertEqual(InteractiveTools.matcher, "AskUserQuestion|ExitPlanMode")
+        for name in InteractiveTools.names {
+            XCTAssertTrue(InteractiveTools.matcher.contains(name))
+            XCTAssertTrue(InteractiveTools.contains(name))
+        }
+        XCTAssertFalse(InteractiveTools.contains("Bash"))
+    }
+
+    func testOrdinaryToolsAreUntouched() throws {
+        let p = buildPreToolUsePayload(try plan(tool: "Bash", input: ["command": "ls"]))
+        XCTAssertEqual(p["style"] as? String, "claude")
+        XCTAssertNil(p["persistent"])
+    }
+}
