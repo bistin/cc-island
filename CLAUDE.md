@@ -99,6 +99,62 @@ Validated against all 30 transcripts on the development machine: 25 idle, 3 unkn
 mid-turn with no `turn_duration`), 2 working — one of them the session doing the validation, the
 other confirmed live by its mtime and a matching `claude` process.
 
+## Jumping to the right terminal tab
+
+A click on the island focuses the pane running that session. `TerminalActivator` tries three
+routes in order: tmux, then AppleScript against Terminal.app / iTerm2, then "bring whatever
+terminal is running to the front".
+
+**A session under tmux has two ttys, and confusing them was the bug.** The hook reports the
+*pane's* tty — it walks to its parent and asks `ps` for the controlling terminal, which inside a
+pane is the pane's pty. The emulator knows that tab by the *client's* tty instead. Measured on a
+live server: `pane_tty=/dev/ttys005` while `client_tty=/dev/ttys007`. Every AppleScript lookup
+compares against the reported tty, so for anybody running tmux none of them could ever match; the
+whole thing fell through to the last route and landed on whatever tab happened to be showing.
+
+`DynamicIslandCore.TmuxTargetResolver` resolves one into the other by joining `list-panes -a` and
+`list-clients` on the session name, and `TmuxBridge` runs the two `select` calls. Two independent
+things come out of it:
+
+- the **pane id**, which `select-pane` + `select-window` move to — the only route to the right
+  pane for Ghostty, WezTerm, Warp, Hyper, kitty and Alacritty, none of which expose a tab model
+  to AppleScript at all
+- the **client tty**, handed to the AppleScript route, which is what makes it land on the right
+  tab for Terminal.app and iTerm2
+
+**It needs no permission of any kind** — no accessibility, no automation, no TCC prompt. tmux is
+an ordinary subprocess and asking it to change its own selection is not cross-app automation. It
+runs off the main thread for the same reason; only the AppleScript half needs a run loop.
+
+Two limits worth knowing before debugging a report that it did nothing:
+
+- **Only the default socket.** A server started with `tmux -L name` or `-S path` is invisible
+  here. The hook runs inside the pane and could forward `$TMUX`, which is where a fix would start.
+- **Which app comes forward is still a guess** when the terminal has no AppleScript tab model.
+  tmux puts the right pane in front inside its own window, but with both Terminal.app and Ghostty
+  running, the fallback picks by `knownTerminalBundleIDs` order rather than by which one is
+  actually drawing that client.
+
+Verified end to end against a live server: with focus parked on a second window,
+`TmuxBridge.reveal` on the first window's pane tty returned the client tty and moved
+`window_active` from the second window to the first.
+
+`--reveal-tty <tty>` runs the same two routes synchronously and says which one answered — it
+exists because the click path otherwise had no way to be exercised without a person clicking, and
+"hand the user a build and ask them to try it" is the shape of testing this project tries not to
+do. Unlike `--login-item-status` it is deliberately an action rather than a status: what it does
+is exactly what the user was about to do by clicking. Output from a real run, focus parked on the
+second window:
+
+```
+$ DynamicIsland --reveal-tty /dev/ttys005
+reveal /dev/ttys005
+tmux: pane selected, emulator knows it as /dev/ttys007
+applescript: no tab matched /dev/ttys007 — expected for a terminal with no tab model; tmux already aimed the pane
+```
+
+A tty that fails `decodeTTY` is refused with exit 1 rather than passed on.
+
 ## Hook Integration
 
 `Sources/island-hook/main.swift` is the canonical universal hook entry point — a Foundation-only Swift binary (~109KB) that handles Claude Code, GitHub Copilot, and OpenAI Codex by sniffing payload shape (`hook_event_name` casing vs `toolName` at root). Reads JSON from stdin, dispatches via `IslandHookCore` (pure-logic library, fully unit-tested), and POSTs formatted events to `127.0.0.1:9423/event`. Must exit 0 so it never blocks the caller. PermissionRequest is the only event that emits stdout (provider-specific allow/deny JSON).
