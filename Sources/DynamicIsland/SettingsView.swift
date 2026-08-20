@@ -142,6 +142,17 @@ private struct GeneralTab: View {
         // macOS owns this state, so re-read it every time the panel shows —
         // the user may have flipped it in System Settings meanwhile.
         .onAppear { loginItem.refresh() }
+        // `onAppear` alone is not enough. The window controller is retained by
+        // the AppDelegate and `isReleasedWhenClosed` is false, so this view
+        // stays mounted; and the Login Items deep link doesn't close the window
+        // anyway, it just sends it behind System Settings. Coming back would
+        // then show whatever the toggle said before the user changed it.
+        // Re-activation is the moment that round trip ends.
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification
+            )
+        ) { _ in loginItem.refresh() }
     }
 
     @ViewBuilder
@@ -169,6 +180,13 @@ private struct GeneralTab: View {
 
             if state.showsSystemSettingsButton {
                 Button("Open Login Items settings…") { loginItem.openSystemSettings() }
+            }
+
+            // The way out for someone who wants the registration gone rather
+            // than re-approved. `setEnabled(false)` is what the toggle would
+            // have sent if a vetoed item had an off position to travel to.
+            if state.showsUnregisterButton {
+                Button("Remove login item") { loginItem.setEnabled(false) }
             }
 
             if let error = loginItem.lastError {
