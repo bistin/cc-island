@@ -249,7 +249,11 @@ enum HookInstaller {
             case .claudeCode:
                 return [
                     ("PreToolUse",         "",                                         5),
-                    ("PostToolUse",        "Bash|Edit|Write",                          5),
+                    // The interactive tools are appended rather than spelled out: the same list
+                    // decides which PreToolUse raises a persistent "waiting for you", and a
+                    // matcher that drifted from it would leave that event with nothing to clear
+                    // it — an island stuck saying somebody is waiting long after they answered.
+                    ("PostToolUse",        "Bash|Edit|Write|\(InteractiveTools.matcher)", 5),
                     ("PostToolUseFailure", "",                                         5),
                     // PermissionRequest long-polls `/response` for the user's
                     // Allow/Deny up to the permission-timeout setting. Claude
