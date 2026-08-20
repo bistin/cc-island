@@ -22,6 +22,14 @@ jobs:
       - name: Run tests
         run: swift test
 
+      # A number quoted in the docs is a claim like any other, and it is the kind
+      # that rots silently. This reads each one back out of the code it describes
+      # and fails on a disagreement — including the case where the sentence holding
+      # the claim has been reworded away, which would otherwise be a check that
+      # passes by covering nothing.
+      - name: Check the numbers the docs claim
+        run: ./scripts/check-claimed-numbers.sh
+
       - name: Build release
         run: swift build -c release
 
