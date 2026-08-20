@@ -139,6 +139,22 @@ Verified end to end against a live server: with focus parked on a second window,
 `TmuxBridge.reveal` on the first window's pane tty returned the client tty and moved
 `window_active` from the second window to the first.
 
+`--reveal-tty <tty>` runs the same two routes synchronously and says which one answered — it
+exists because the click path otherwise had no way to be exercised without a person clicking, and
+"hand the user a build and ask them to try it" is the shape of testing this project tries not to
+do. Unlike `--login-item-status` it is deliberately an action rather than a status: what it does
+is exactly what the user was about to do by clicking. Output from a real run, focus parked on the
+second window:
+
+```
+$ DynamicIsland --reveal-tty /dev/ttys005
+reveal /dev/ttys005
+tmux: pane selected, emulator knows it as /dev/ttys007
+applescript: no tab matched /dev/ttys007 — expected for a terminal with no tab model; tmux already aimed the pane
+```
+
+A tty that fails `decodeTTY` is refused with exit 1 rather than passed on.
+
 ## Hook Integration
 
 `Sources/island-hook/main.swift` is the canonical universal hook entry point — a Foundation-only Swift binary (~109KB) that handles Claude Code, GitHub Copilot, and OpenAI Codex by sniffing payload shape (`hook_event_name` casing vs `toolName` at root). Reads JSON from stdin, dispatches via `IslandHookCore` (pure-logic library, fully unit-tested), and POSTs formatted events to `127.0.0.1:9423/event`. Must exit 0 so it never blocks the caller. PermissionRequest is the only event that emits stdout (provider-specific allow/deny JSON).

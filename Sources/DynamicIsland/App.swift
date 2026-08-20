@@ -1,4 +1,5 @@
 import AppKit
+import DynamicIslandCore
 import IslandHookCore
 import SwiftUI
 
@@ -21,6 +22,7 @@ struct DynamicIslandApp {
             runUninstallCLI(target: .codex); exit(0)
         }
         if args.contains("--login-item-status") { printLoginItemStatus(); exit(0) }
+        if let tty = flagValue(in: args, after: "--reveal-tty") { runRevealCLI(tty: tty); exit(0) }
         if args.contains("--help") || args.contains("-h") { printUsage(); exit(0) }
 
         let app = NSApplication.shared
@@ -28,6 +30,28 @@ struct DynamicIslandApp {
         app.delegate = delegate
         app.setActivationPolicy(.accessory) // Hide from dock
         app.run()
+    }
+
+    /// Diagnostic: run the same focus routes a click on the island runs, and say which answered.
+    ///
+    /// Deliberately an action rather than a status, unlike `--login-item-status`: what it does is
+    /// exactly what the user was going to do by clicking, and the point is to be able to check it
+    /// without one.
+    private static func runRevealCLI(tty: String) {
+        guard let decoded = decodeTTY(from: tty) else {
+            FileHandle.standardError.write(Data("not a tty this app will accept: \(tty)\n".utf8))
+            print("expected /dev/ttys<digits> or /dev/pts/<digits>")
+            exit(1)
+        }
+        print("reveal \(decoded)")
+        print(TerminalActivator.revealSynchronously(tty: decoded))
+    }
+
+    /// The value after a flag, or nil when the flag is absent or has nothing after it.
+    private static func flagValue(in args: [String], after flag: String) -> String? {
+        guard let idx = args.firstIndex(of: flag), idx + 1 < args.count else { return nil }
+        let value = args[idx + 1]
+        return value.hasPrefix("--") ? nil : value
     }
 
     /// Returns the repo path for the Copilot CLI flag, or nil if the flag isn't present.
@@ -118,6 +142,9 @@ struct DynamicIslandApp {
           --uninstall-codex-hooks              Remove Codex hooks from ~/.codex/hooks.json.
           --login-item-status                  Report whether macOS launches the island at login
                                                (set it in Settings → General → Startup).
+          --reveal-tty <tty>                   Focus the terminal pane owning that tty, the same way
+                                               clicking the island does, and say which route answered.
+                                               For diagnosing "clicking jumps to the wrong tab".
           --help, -h                           Show this help.
         """)
     }

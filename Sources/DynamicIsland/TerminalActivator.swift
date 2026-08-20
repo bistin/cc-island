@@ -68,6 +68,39 @@ enum TerminalActivator {
         }
     }
 
+    /// The same two routes, run synchronously on the calling thread, for `--reveal-tty`.
+    ///
+    /// It exists because the click path had no way to be exercised without a person clicking, and
+    /// "hand the user a build and ask them to try it" is the shape of testing this project tries
+    /// not to do. A CLI invocation has a main thread but no running run loop, so the async hop in
+    /// ``activate(tty:)`` would exit before it did anything; this does both halves in order and
+    /// reports which one answered.
+    ///
+    /// Returns a line describing what happened, for a person reading it in a terminal.
+    static func revealSynchronously(tty: String) -> String {
+        let tmuxTTY = TmuxBridge.reveal(tty: tty)
+        let effective = tmuxTTY ?? tty
+        var notes = tmuxTTY.map { "tmux: pane selected, emulator knows it as \($0)" }
+            ?? "tmux: not a pane (no server, non-default socket, or not under tmux)"
+
+        let runningIDs = Set(
+            NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier }
+        )
+        if runningIDs.contains("com.apple.Terminal"), runScript(terminalAppScript(tty: effective)) {
+            notes += "\napplescript: Terminal.app tab matched \(effective)"
+            return notes
+        }
+        if runningIDs.contains("com.googlecode.iterm2"), runScript(iTermScript(tty: effective)) {
+            notes += "\napplescript: iTerm2 session matched \(effective)"
+            return notes
+        }
+        notes += "\napplescript: no tab matched \(effective)"
+        notes += tmuxTTY == nil
+            ? " — nothing more to try"
+            : " — expected for a terminal with no tab model; tmux already aimed the pane"
+        return notes
+    }
+
     /// The AppleScript half. Main thread only — see ``activate(tty:)``.
     private static func activateFrontmost(tty: String) {
         let runningIDs = Set(
