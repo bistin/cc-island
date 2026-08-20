@@ -191,3 +191,173 @@ final class TranscriptStateTests: XCTestCase {
         XCTAssertNil(TranscriptState.date(fromISO8601: "yesterday"))
     }
 }
+
+// MARK: - Finding the file, and reading only as much of it as it takes
+
+final class TranscriptLocatorTests: XCTestCase {
+
+    private let now = Date(timeIntervalSince1970: 1_760_000_000)
+
+    private func at(_ offset: TimeInterval) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: now.addingTimeInterval(offset))
+    }
+
+    private func temporaryDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transcript-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        return url
+    }
+
+    private func write(_ lines: [String], in directory: URL) throws -> URL {
+        let url = directory.appendingPathComponent("session.jsonl")
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    private func turnDuration(_ ts: String) -> String {
+        #"{"type":"system","subtype":"turn_duration","durationMs":1,"timestamp":"\#(ts)"}"#
+    }
+    private func toolUse(_ ts: String) -> String {
+        #"{"type":"assistant","message":{"stop_reason":"tool_use","content":[{"type":"tool_use","id":"t1"}]},"timestamp":"\#(ts)"}"#
+    }
+    private func padding(_ n: Int, _ ts: String) -> [String] {
+        (0..<n).map { #"{"type":"file-history-snapshot","messageId":"m\#($0)","pad":"\#(String(repeating: "x", count: 400))","timestamp":"\#(ts)"}"# }
+    }
+
+    // MARK: - The slug
+
+    /// The case that proves the rule, taken from a real `~/.claude/projects` entry rather than
+    /// invented: one ideograph becomes one dash, so `/Users/bistin/Desktop/毒` is on disk as
+    /// `-Users-bistin-Desktop--`. Replacing only `/` would look for `…-Desktop-毒`, which is not
+    /// there — and because a missing transcript is an ordinary state, that failure is silent.
+    func testEveryNonAlphanumericBecomesADashNotJustTheSeparators() {
+        XCTAssertEqual(TranscriptState.projectSlug(for: "/Users/bistin/Desktop/毒"),
+                       "-Users-bistin-Desktop--")
+        XCTAssertNotEqual(TranscriptState.projectSlug(for: "/Users/bistin/Desktop/毒"),
+                          "/Users/bistin/Desktop/毒".replacingOccurrences(of: "/", with: "-"))
+    }
+
+    func testDotsUnderscoresAndSpacesAreDashedToo() {
+        XCTAssertEqual(TranscriptState.projectSlug(for: "/a/b.c"), "-a-b-c")
+        XCTAssertEqual(TranscriptState.projectSlug(for: "/a/b_c"), "-a-b-c")
+        XCTAssertEqual(TranscriptState.projectSlug(for: "/a/b c"), "-a-b-c")
+        XCTAssertEqual(TranscriptState.projectSlug(for: "/a/b-c"), "-a-b-c")
+    }
+
+    /// Counted in UTF-16 code units, which is why this is two dashes and the ideograph above is
+    /// one. Stated as a test because "how many dashes" is exactly what a rewrite would get wrong.
+    func testAnEmojiIsTwoDashesBecauseItIsTwoCodeUnits() {
+        // `/` `a` `/` then two code units: five dashes-and-letters in all.
+        XCTAssertEqual(TranscriptState.projectSlug(for: "/a/🙂"), "-a---")
+        XCTAssertEqual(TranscriptState.projectSlug(for: "/a/毒"), "-a--")
+    }
+
+    func testAnOrdinaryPathIsUnchangedApartFromSeparators() {
+        XCTAssertEqual(TranscriptState.projectSlug(for: "/Users/bistin/app/cc-island"),
+                       "-Users-bistin-app-cc-island")
+    }
+
+    func testTranscriptURLIsProjectSlugThenSessionID() {
+        let home = URL(fileURLWithPath: "/home/x")
+        let url = TranscriptState.transcriptURL(cwd: "/a/b", sessionID: "abc-123", home: home)
+        XCTAssertEqual(url?.path, "/home/x/.claude/projects/-a-b/abc-123.jsonl")
+    }
+
+    /// `cwd` cannot hold a separator once slugged; the session id is not slugged and arrives in
+    /// an HTTP payload, so `appendingPathComponent` would treat a `/` in it as structure and
+    /// `..` would climb out of the tree.
+    func testASessionIDThatIsNotAPlainFilenameIsRefused() {
+        let home = URL(fileURLWithPath: "/home/x")
+        for bad in ["n/a", "../../etc/passwd", "..", ".", "", "a\u{0}b", String(repeating: "x", count: 256)] {
+            XCTAssertNil(TranscriptState.transcriptURL(cwd: "/a/b", sessionID: bad, home: home),
+                         "should have been refused: \(bad)")
+        }
+    }
+
+    func testOrdinarySessionIDsAreAccepted() {
+        let home = URL(fileURLWithPath: "/home/x")
+        for good in ["eae970fe-82f4-4381-bd65-42fb594dce54", "main", "agent-3"] {
+            XCTAssertNotNil(TranscriptState.transcriptURL(cwd: "/a/b", sessionID: good, home: home))
+        }
+    }
+
+    // MARK: - Reading the tail
+
+    func testAMissingFileIsUnknownNotAnError() {
+        let url = URL(fileURLWithPath: "/nowhere/at/all.jsonl")
+        XCTAssertEqual(TranscriptState.read(fileAt: url, now: now).activity, .unknown)
+    }
+
+    func testAnEmptyFileIsUnknown() throws {
+        let dir = try temporaryDirectory()
+        let url = try write([], in: dir)
+        XCTAssertEqual(TranscriptState.read(fileAt: url, now: now).activity, .unknown)
+    }
+
+    func testASmallFileReadsWholeAndAgreesWithTheLineBasedReader() throws {
+        let dir = try temporaryDirectory()
+        let lines = [toolUse(at(-60)), turnDuration(at(-30))]
+        let url = try write(lines, in: dir)
+        let fromFile = TranscriptState.read(fileAt: url, now: now)
+        let fromLines = TranscriptState.read(lines: lines, now: now)
+        XCTAssertEqual(fromFile.activity, .idle)
+        XCTAssertEqual(fromFile.activity, fromLines.activity)
+        XCTAssertEqual(fromFile.lastActivityAt, fromLines.lastActivityAt)
+    }
+
+    /// The window is widened rather than answered from. Here the last 64 KB is nothing but
+    /// housekeeping, and the entry that decides is far above it — a reader that gave up on its
+    /// first window would report `unknown` about a file it had barely looked at.
+    func testTheWindowWidensUntilSomethingSignificantIsFound() throws {
+        let dir = try temporaryDirectory()
+        let lines = [toolUse(at(-60))] + padding(400, at(-30))   // ~180 KB of bookkeeping
+        let url = try write(lines, in: dir)
+        let small = TranscriptState.read(fileAt: url, now: now, tailBytes: 2_000)
+        XCTAssertEqual(small.activity, .working)
+        XCTAssertEqual(small.decidedBy, "assistant")
+    }
+
+    /// Cutting at a byte offset lands mid-line, and half a record is not a record.
+    func testThePartialFirstLineIsDropped() throws {
+        let dir = try temporaryDirectory()
+        let url = try write([toolUse(at(-60)), turnDuration(at(-30))], in: dir)
+        let lines = try XCTUnwrap(TranscriptState.tailLines(of: url, bytes: 40))
+        for line in lines where !line.isEmpty {
+            XCTAssertNotNil(try? JSONSerialization.jsonObject(with: Data(line.utf8)),
+                            "a partial line survived: \(line)")
+        }
+    }
+
+    /// A window that lands entirely inside one record holds no complete line. Returning the
+    /// fragment would be offering half a record as evidence; returning nothing makes the caller
+    /// widen, which is the only useful thing to do about it.
+    func testAWindowInsideASingleRecordYieldsNoLines() throws {
+        let dir = try temporaryDirectory()
+        let huge = #"{"type":"assistant","message":{"stop_reason":"tool_use"},"pad":"\#(String(repeating: "x", count: 5_000))"}"#
+        let url = try write([turnDuration(at(-60)), huge], in: dir)
+        XCTAssertEqual(TranscriptState.tailLines(of: url, bytes: 200), [])
+        // …and the reader widens rather than reporting unknown about a file it barely read.
+        XCTAssertEqual(TranscriptState.read(fileAt: url, now: now, tailBytes: 200).activity, .working)
+    }
+
+    func testTailLinesReturnsEverythingWhenTheWindowExceedsTheFile() throws {
+        let dir = try temporaryDirectory()
+        let url = try write([toolUse(at(-60)), turnDuration(at(-30))], in: dir)
+        let lines = try XCTUnwrap(TranscriptState.tailLines(of: url, bytes: 1_000_000))
+        XCTAssertEqual(lines.filter { !$0.isEmpty }.count, 2)
+    }
+
+    /// A file that says nothing about the session anywhere is `unknown` — reached only after the
+    /// widening has run out of file, so it is an answer rather than a shrug.
+    func testAFileOfNothingButBookkeepingIsUnknown() throws {
+        let dir = try temporaryDirectory()
+        let url = try write(padding(20, at(-30)), in: dir)
+        let r = TranscriptState.read(fileAt: url, now: now, tailBytes: 500)
+        XCTAssertEqual(r.activity, .unknown)
+        XCTAssertNil(r.decidedBy)
+    }
+}

@@ -83,6 +83,135 @@ public enum TranscriptState {
         "file-history-snapshot", "file-history-delta", "queue-operation", "attachment",
     ]
 
+    /// How much of the tail to read before parsing anything.
+    ///
+    /// **Reading the whole file is not affordable and was measured rather than guessed.** These
+    /// grow without bound — 44 MB and 31 MB on the development machine — and parsing every line
+    /// of one cost 281 ms and 518 ms respectively. Nothing in the verdict needs any of that: a
+    /// turn ending, an interrupted turn, the newest entry, are all at the end.
+    ///
+    /// 64 KB covers a few hundred ordinary entries. When it does not — a single record can be a
+    /// megabyte, so a window can land entirely inside one and contain no complete line at all —
+    /// ``read(fileAt:now:staleAfter:tailBytes:)`` widens it rather than answering from nothing.
+    public static let defaultTailBytes = 64_000
+
+    /// Where widening stops. Past this the answer is `unknown`, which is the honest one: a file
+    /// whose last four megabytes say nothing about what the session is doing has not told us.
+    public static let maxTailBytes = 4_194_304
+
+    /// The directory Claude Code keeps a project's sessions in.
+    ///
+    /// **Every character that is not an ASCII letter or digit becomes a dash — not just the
+    /// separators.** Getting this wrong fails silently in the worst way: a transcript that cannot
+    /// be found is an ordinary state, so a wrong slug does not raise anything, it just makes the
+    /// session look like one Claude Code never wrote about.
+    ///
+    /// Confirmed against a real directory rather than taken on trust. `~/Desktop/毒` appears on
+    /// disk as `-Users-bistin-Desktop--`: the slash becomes one dash and the ideograph becomes
+    /// another. Replacing only `/` would have produced `-Users-bistin-Desktop-毒`, which is not
+    /// there, so that session's transcript would never have been located.
+    ///
+    /// Counted in UTF-16 code units, which is what makes that example come out at one dash and an
+    /// emoji come out at two.
+    ///
+    /// **The map is many-to-one, so use it only forwards.** `-Users-me-code-app-web` is both
+    /// `app/web` and `app-web` and nothing in the name says which; never read a path back out of
+    /// one.
+    public static func projectSlug(for cwd: String) -> String {
+        var out = ""
+        out.reserveCapacity(cwd.utf16.count)
+        for unit in cwd.utf16 {
+            let isASCIIAlphanumeric = (unit >= 48 && unit <= 57)      // 0-9
+                || (unit >= 65 && unit <= 90)                          // A-Z
+                || (unit >= 97 && unit <= 122)                         // a-z
+            out.append(isASCIIAlphanumeric ? Character(UnicodeScalar(UInt8(unit))) : "-")
+        }
+        return out
+    }
+
+    /// The transcript for one session, given the two things every hook payload already carries.
+    ///
+    /// cc-island is better placed here than a tool that has to guess: the hook reports `cwd` and
+    /// `session_id`, and the file is named for the session, so nothing has to be matched by title
+    /// or by modification time.
+    ///
+    /// **nil for a session id that is not a plain filename**, which is a boundary rather than
+    /// tidiness. `cwd` goes through ``projectSlug(for:)`` and comes out incapable of holding a
+    /// separator; the session id does not, and it arrives in an HTTP payload like everything else
+    /// the hook sends. `appendingPathComponent` treats a `/` in it as structure — `"n/a"` yields
+    /// `…/projects/<slug>/n/a.jsonl`, a different directory — so `..` would climb out of the
+    /// tree entirely. Rejected rather than slugged: mangling a session id would look up the wrong
+    /// file and say nothing about it, while nil is an answer the caller can see.
+    public static func transcriptURL(cwd: String, sessionID: String, home: URL? = nil) -> URL? {
+        guard isPlainFilename(sessionID) else { return nil }
+        let base = home ?? FileManager.default.homeDirectoryForCurrentUser
+        return base
+            .appendingPathComponent(".claude/projects", isDirectory: true)
+            .appendingPathComponent(projectSlug(for: cwd), isDirectory: true)
+            .appendingPathComponent("\(sessionID).jsonl")
+    }
+
+    /// A single path component and nothing else: non-empty, no separator, no null, and not a
+    /// relative-path token. Deliberately not a UUID check — Claude Code names the file after the
+    /// session id and has never promised what that looks like.
+    static func isPlainFilename(_ name: String) -> Bool {
+        guard !name.isEmpty, name.count <= 255 else { return false }
+        guard name != ".", name != ".." else { return false }
+        return !name.contains("/") && !name.contains("\\") && !name.contains("\0")
+    }
+
+    /// Read a verdict from a transcript on disk, touching only as much of the tail as it takes.
+    ///
+    /// Starts at `tailBytes` and widens eightfold until something significant is found, the whole
+    /// file has been read, or ``maxTailBytes`` is reached. Widening is what makes a small default
+    /// safe: a window that lands inside one enormous record, or in a run of housekeeping entries,
+    /// asks for more instead of reporting `unknown` about a file it barely looked at.
+    ///
+    /// A missing or unreadable file is `unknown` — not an error and not `idle`.
+    public static func read(
+        fileAt url: URL,
+        now: Date,
+        staleAfter: TimeInterval = defaultStaleAfter,
+        tailBytes: Int = defaultTailBytes
+    ) -> TranscriptReading {
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int
+        guard let size, size > 0 else { return TranscriptReading(activity: .unknown) }
+
+        var window = max(1, tailBytes)
+        while true {
+            guard let lines = tailLines(of: url, bytes: window) else {
+                return TranscriptReading(activity: .unknown)
+            }
+            let reading = read(lines: lines, now: now, staleAfter: staleAfter)
+            // `decidedBy` is nil exactly when nothing significant was in the window.
+            if reading.decidedBy != nil || window >= size || window >= maxTailBytes {
+                return reading
+            }
+            window = min(window * 8, min(size, maxTailBytes))
+        }
+    }
+
+    /// The last `bytes` of a file, as lines, with the first one dropped when the read started
+    /// mid-file — cutting at a byte offset lands in the middle of a line, and half a record is
+    /// not a record. That also disposes of any partial UTF-8 sequence at the boundary.
+    static func tailLines(of url: URL, bytes: Int) -> [String]? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let end = try? handle.seekToEnd() else { return nil }
+        let start = end > UInt64(bytes) ? end - UInt64(bytes) : 0
+        guard (try? handle.seek(toOffset: start)) != nil,
+              let data = try? handle.readToEnd() else { return nil }
+        var text = String(decoding: data, as: UTF8.self)
+        if start > 0 {
+            // No newline anywhere means the window landed entirely inside one record — records
+            // reach a megabyte — so it holds no complete line at all. Empty, rather than half a
+            // line: the caller widens on that, and a half-line is not evidence of anything.
+            guard let newline = text.firstIndex(of: "\n") else { return [] }
+            text = String(text[text.index(after: newline)...])
+        }
+        return text.components(separatedBy: "\n")
+    }
+
     /// Read a verdict out of the transcript's lines.
     ///
     /// Takes lines rather than a path so the whole of the decision is testable without a

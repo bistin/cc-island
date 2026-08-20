@@ -89,6 +89,30 @@ entry predated the call by 26, 32 and 54 seconds. So an unanswered permission pr
 at that moment they are the same bytes. There is therefore no `waiting` case: the
 `PermissionRequest` hook stays the source for that, and this file does not try to replace it.
 
+**Only the tail is read, and how much was measured.** Transcripts grow without bound — 44 MB and
+31 MB on the development machine — and parsing every line of one cost 281 ms and 518 ms. Nothing
+in the verdict needs any of that: a turn ending, an interrupted turn, the newest entry, are all at
+the end. `read(fileAt:)` starts at 64 KB and widens eightfold until something significant turns up,
+the file runs out, or 4 MB is reached. Across all 31 transcripts on that machine the tail read
+agreed with the full read on every verdict and every `lastActivityAt`, at a worst case of 18.5 ms
+against 529.6 ms. A window that lands inside one record — records reach a megabyte — holds no
+complete line, so it yields nothing and the caller widens rather than treating half a record as
+evidence.
+
+**Locating the file: every character that is not an ASCII letter or digit becomes a dash, not just
+the separators.** `projectSlug(for:)` counts UTF-16 code units, so one ideograph is one dash and an
+emoji is two. This is proven on the development machine rather than taken on trust:
+`/Users/bistin/Desktop/毒` is on disk as `~/.claude/projects/-Users-bistin-Desktop--`, and the
+naive rule's `-Users-bistin-Desktop-毒` does not exist. Getting it wrong fails in the worst way —
+a missing transcript is an ordinary state, so a wrong slug raises nothing and simply makes the
+session look like one Claude Code never wrote about. The map is many-to-one (`-a-b-c` is `a/b/c`
+and `a/b-c`), so it is only ever used forwards.
+
+`transcriptURL(cwd:sessionID:)` returns nil for a session id that is not a plain filename. `cwd`
+cannot hold a separator once slugged; the session id is not slugged and arrives in an HTTP payload,
+and `appendingPathComponent` treats a `/` in it as structure, so `..` would climb out of the tree.
+Refused rather than slugged: mangling it would look up the wrong file and say nothing about it.
+
 Stale `working` decays to `unknown`, never to `idle` (default `staleAfter` 300s — appends happen
 once per completed tool and a single `Bash` step may run for ten minutes). A session that stopped
 writing mid-turn was killed, or slept, or is on a very long tool; none of those is a finished turn,
