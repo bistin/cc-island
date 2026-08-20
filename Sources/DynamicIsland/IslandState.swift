@@ -395,10 +395,16 @@ class IslandStateManager: ObservableObject {
         dismissTimer?.invalidate()
         isProcessing = true
 
-        // Action events and quick-reply reminders open expanded so the
-        // user can see the decision buttons immediately. Other events
-        // start compact and grow if the user clicks.
-        let needsExpanded = event.style == .action || event.replyMode != nil
+        // Something that pulses, and has something to show, shows it — the
+        // detail is what tells the user whether this is worth crossing the
+        // room for, and making them click first is asking them to act on
+        // "something wants you" alone. Rule lives in DynamicIslandCore so it
+        // can be tested without a window.
+        let needsExpanded = shouldOpenExpanded(
+            style: event.style.dispositionShape,
+            hasDetail: !(event.detail ?? "").isEmpty,
+            hasReplyMode: event.replyMode != nil
+        )
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
             currentEvent = event
             mode = needsExpanded ? .expanded : .compact
@@ -473,29 +479,40 @@ class IslandStateManager: ObservableObject {
 
     /// Single entry point for compact ear / capsule taps.
     ///
-    /// Pulsing events (action / reminder) keep their existing dismiss
-    /// behaviour because their decision UI lives on the island itself.
-    /// Everything else: when the user has click-to-terminal on (default)
-    /// and the event carries a tty, ask `TerminalActivator` to focus the
-    /// matching tab and dismiss the island. Otherwise fall back to
-    /// expanding so the user can still inspect the diff / detail.
+    /// A tap means "I want to deal with this", and where that leads depends
+    /// on whether the island can do anything about it. When it holds the
+    /// decision — Allow/Deny, or quick-reply buttons — the answer is right
+    /// there. When it does not, the island is a pointer, and the useful
+    /// thing a pointer does is take you to what it points at. A waiting
+    /// event is the second kind: the menu is in the terminal, so dismissing
+    /// the marker threw away the thing the user was reaching for.
     ///
-    /// Kept on the state manager so the three view sites share one
-    /// policy and a future test can drive it without an NSPanel.
+    /// Kept on the state manager so the view sites share one policy, and the
+    /// rule itself is in `DynamicIslandCore` so it can be tested without an
+    /// NSPanel.
     func handleCompactTap() {
         guard let event = currentEvent else { return }
+        if jumpToTerminal(for: event) { return }
         if event.style == .action || event.style == .reminder {
             dismiss()
             return
         }
-        if let tty = event.tty,
-           dynamicIslandUserDefaults.bool(forKey: clickToTerminalKey),
-           TerminalActivator.hasRunningTerminal() {
-            TerminalActivator.activate(tty: tty)
-            dismiss()
-            return
-        }
         expand()
+    }
+
+    /// Focus the event's terminal and stand down, or return false when this
+    /// event is not one a tap should walk away from.
+    @discardableResult
+    func jumpToTerminal(for event: IslandEvent) -> Bool {
+        guard shouldTapJumpToTerminal(
+            style: event.style.dispositionShape,
+            hasReplyMode: event.replyMode != nil,
+            hasTTY: !(event.tty ?? "").isEmpty,
+            clickToTerminalEnabled: dynamicIslandUserDefaults.bool(forKey: clickToTerminalKey)
+        ), let tty = event.tty, TerminalActivator.hasRunningTerminal() else { return false }
+        TerminalActivator.activate(tty: tty)
+        dismiss()
+        return true
     }
 
     func collapse() {
@@ -638,6 +655,7 @@ extension IslandEvent {
             title: title,
             style: style.dispositionShape,
             hasReplyMode: replyMode != nil,
+            isPersistent: persistent,
             hasProgress: progress != nil,
             sessionID: sessionID,
             agentID: agentID,

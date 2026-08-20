@@ -20,6 +20,9 @@ public struct EventSnapshot: Equatable, Sendable {
     public let title: String
     public let style: EventStyleShape
     public let hasReplyMode: Bool
+    /// Set on events that do not dismiss themselves. On a `reminder` this is what says "somebody
+    /// is being asked and has not answered", which is the difference between a ping and a wait.
+    public let isPersistent: Bool
     public let hasProgress: Bool
     public let sessionID: String?
     public let agentID: String?
@@ -29,6 +32,7 @@ public struct EventSnapshot: Equatable, Sendable {
         title: String,
         style: EventStyleShape,
         hasReplyMode: Bool,
+        isPersistent: Bool = false,
         hasProgress: Bool,
         sessionID: String?,
         agentID: String?,
@@ -37,6 +41,7 @@ public struct EventSnapshot: Equatable, Sendable {
         self.title = title
         self.style = style
         self.hasReplyMode = hasReplyMode
+        self.isPersistent = isPersistent
         self.hasProgress = hasProgress
         self.sessionID = sessionID
         self.agentID = agentID
@@ -90,8 +95,19 @@ public func decideEventDisposition(
         return .mergeProgress
     }
 
+    // What counts as "a person is mid-decision, do not bury this".
+    //
+    // A persistent `reminder` belongs here and did not used to, which was a real hole: an
+    // `AskUserQuestion` waiting on somebody is the same claim on their attention as an Allow/Deny,
+    // and without this the very next tool call from *any* session — a Bash from a different
+    // project, a Read from a subagent — replaced it and the question vanished from the island
+    // while it was still on screen in the terminal. Observed while testing #66.
+    //
+    // Same-session events still take over, which is deliberate and is also the clearing path:
+    // a session that has moved on to its next tool is a session whose question got answered.
     func isDecisionShape(_ e: EventSnapshot) -> Bool {
-        e.style == .action || (e.style == .reminder && e.hasReplyMode)
+        e.style == .action
+            || (e.style == .reminder && (e.hasReplyMode || e.isPersistent))
     }
 
     let curIsDecision = !currentExpired && (current.map(isDecisionShape) ?? false)
@@ -119,4 +135,59 @@ public func isSameSession(a: EventSnapshot, b: EventSnapshot) -> Bool {
         return sa == sb
     }
     return a.project == b.project && a.agentID == b.agentID
+}
+
+/// Whether an event should open already expanded, rather than as ears the user has to click.
+///
+/// **The rule is: something that pulses, and has something to show, shows it.** An event that
+/// pulses is asking for a person; if it also carries a detail, that detail is what tells them
+/// whether it is worth crossing the room for. Making them click first is asking them to act on
+/// "something wants you" alone, which is the least useful half of the message.
+///
+/// - `action` opens expanded because its detail *is* the decision — Allow/Deny sit in it.
+/// - A `reminder` with a detail is a question with its options, a plan with its body, or a turn
+///   that ended on a question with the message that ended it. All three are "here is what you
+///   would be deciding".
+/// - A `reminder` with nothing to show — the bare `Notification` ping — stays as ears. Expanding
+///   an empty panel would cover the screen to say nothing.
+///
+/// Deliberately **not** paired with an expiry. `action` expires because its hook stops
+/// long-polling and a late click cannot land; a question has no such horizon, and 58 of them on
+/// one machine were answered at a median of 71 seconds and a maximum of 10.9 hours. Dismissing
+/// the marker while the question is still on screen would defeat the entire point. What clears it
+/// instead is arrival: the matching `PostToolUse`, or the session's next event, or its `Stop` —
+/// any of which replaces it.
+public func shouldOpenExpanded(
+    style: EventStyleShape,
+    hasDetail: Bool,
+    hasReplyMode: Bool
+) -> Bool {
+    if style == .action { return true }
+    if hasReplyMode { return true }
+    return style == .reminder && hasDetail
+}
+
+/// Whether tapping this event should take the user to its terminal, rather than dismissing or
+/// collapsing it.
+///
+/// **The question a tap answers is "I want to deal with this", and where that leads depends on
+/// whether the island can do anything about it.** When the island holds the decision — Allow/Deny,
+/// or quick-reply buttons — the answer is right there and leaving would be the wrong move. When it
+/// does not, the island is a pointer, and the useful thing a pointer can do is take you to the
+/// thing it points at.
+///
+/// That second case is what a waiting event is. `AskUserQuestion` and `ExitPlanMode` put a menu in
+/// the terminal and nothing on the island, so a tap that merely dismissed the marker threw away
+/// the one thing the user was reaching for — and threw away the only record that they were being
+/// asked at all.
+public func shouldTapJumpToTerminal(
+    style: EventStyleShape,
+    hasReplyMode: Bool,
+    hasTTY: Bool,
+    clickToTerminalEnabled: Bool
+) -> Bool {
+    guard hasTTY, clickToTerminalEnabled else { return false }
+    // The decision lives on the island; do not walk away from it.
+    if style == .action || hasReplyMode { return false }
+    return true
 }

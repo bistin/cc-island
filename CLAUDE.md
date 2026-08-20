@@ -224,7 +224,42 @@ as an ordinary `claude` event that auto-dismissed after two seconds.
 
 `PreToolUse` raises a `reminder` — pulsing, and deliberately **without buttons**: the answer is a
 menu in the terminal, and a second place to answer it would be a second source of truth. The
-question becomes the subtitle and its options the detail. `persistent` is stated explicitly rather
+question becomes the subtitle and its options the detail.
+
+**It opens expanded, and the rule generalised.** `DynamicIslandCore.shouldOpenExpanded` says that
+something that pulses, and has something to show, shows it: the detail is what tells a person
+whether this is worth crossing the room for, and making them click first asks them to act on
+"something wants you" alone. That covers a question with its options, a plan with its body, and a
+turn that ended on a question with the message that ended it, while the bare `Notification` ping —
+a `reminder` with no detail — stays as ears, because expanding an empty panel would cover the
+screen to say nothing.
+
+**Tapping it goes to the terminal, not away.** `shouldTapJumpToTerminal` says a tap means "I want
+to deal with this", and where that leads depends on whether the island can do anything about it:
+when it holds the decision — Allow/Deny, or quick-reply buttons — the answer is right there and
+walking away would be wrong; when it does not, the island is a pointer, and the useful thing a
+pointer does is take you to what it points at. A waiting event is the second kind, so both the ears
+and the expanded panel now focus that session's pane (via the tty the hook already sends, and the
+tmux route where one applies) instead of dismissing the only sign that somebody is waiting.
+
+Answering *on* the island is possible in principle — `PreToolUse` can deny with a reason, and the
+`quick_replies` long-poll machinery already exists for `Stop` — but it is not this. A denial with a
+reason reaches Claude as "blocked, and here is why" rather than as an answer, and for
+`ExitPlanMode` "blocked because the user approved it" is a contradiction.
+
+**A persistent reminder counts as "mid-decision" for dispatch**, which it did not at first and
+that was a real hole: `isDecisionShape` only recognised `action` and reminders carrying a reply
+mode, so the very next tool call from *any* session — a `Bash` in another project, a `Read` from a
+subagent — replaced the waiting event and the question vanished from the island while it was still
+on screen in the terminal. Found by watching it happen during testing. Cross-session traffic is now
+dropped while somebody is being asked; **same-session** events still take over, which is deliberate
+and is also the clearing path for a tool the user cancelled, since that never reaches `PostToolUse`.
+
+Deliberately **not** paired with an expiry. `action` expires because its hook stops long-polling
+and a late click cannot land; a question has no such horizon, and dismissing the marker while it is
+still on screen would defeat the point. What clears it instead is arrival — the matching
+`PostToolUse`, the session's next event, or its `Stop`, any of which replaces it. That also covers
+the case `PostToolUse` alone does not: a tool the user cancels never reaches it. `persistent` is stated explicitly rather
 than left to the style's default, because the payload crosses a version boundary and an older
 island that did not infer it would dismiss the one event that must not be dismissed.
 

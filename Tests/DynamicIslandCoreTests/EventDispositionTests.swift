@@ -208,3 +208,158 @@ final class EventDispositionTests: XCTestCase {
         )
     }
 }
+
+// MARK: - What opens expanded
+
+final class ExpandOnArrivalTests: XCTestCase {
+
+    /// Allow/Deny live in the detail, so the detail *is* the decision.
+    func testActionAlwaysOpensExpanded() {
+        XCTAssertTrue(shouldOpenExpanded(style: .action, hasDetail: true, hasReplyMode: false))
+        XCTAssertTrue(shouldOpenExpanded(style: .action, hasDetail: false, hasReplyMode: false))
+    }
+
+    /// A question with its options, a plan with its body, a turn that ended on a question with
+    /// the message that ended it — all three are "here is what you would be deciding".
+    func testAPulsingReminderWithSomethingToShowOpensExpanded() {
+        XCTAssertTrue(shouldOpenExpanded(style: .reminder, hasDetail: true, hasReplyMode: false))
+    }
+
+    /// The bare `Notification` ping. Expanding an empty panel would cover the screen to say
+    /// nothing.
+    func testAReminderWithNothingToShowStaysAsEars() {
+        XCTAssertFalse(shouldOpenExpanded(style: .reminder, hasDetail: false, hasReplyMode: false))
+    }
+
+    func testQuickRepliesStillOpenExpandedWhateverTheStyle() {
+        XCTAssertTrue(shouldOpenExpanded(style: .reminder, hasDetail: false, hasReplyMode: true))
+    }
+
+    /// A detail on a passing event is a diff or a preview, not a decision. It grows if clicked.
+    func testOrdinaryEventsStayCompactEvenWithADetail() {
+        XCTAssertFalse(shouldOpenExpanded(style: .other, hasDetail: true, hasReplyMode: false))
+    }
+}
+
+// MARK: - Where a tap goes
+
+final class TapDestinationTests: XCTestCase {
+
+    /// The waiting case this exists for: a question whose menu is in the terminal and whose
+    /// island shows no buttons. Dismissing it threw away the thing the user was reaching for.
+    func testAWaitingReminderSendsTheTapToTheTerminal() {
+        XCTAssertTrue(shouldTapJumpToTerminal(
+            style: .reminder, hasReplyMode: false, hasTTY: true, clickToTerminalEnabled: true))
+    }
+
+    /// Allow/Deny is right there; walking away from a decision is the wrong move.
+    func testActionStaysBecauseTheDecisionIsOnTheIsland() {
+        XCTAssertFalse(shouldTapJumpToTerminal(
+            style: .action, hasReplyMode: false, hasTTY: true, clickToTerminalEnabled: true))
+    }
+
+    func testQuickRepliesStayForTheSameReason() {
+        XCTAssertFalse(shouldTapJumpToTerminal(
+            style: .reminder, hasReplyMode: true, hasTTY: true, clickToTerminalEnabled: true))
+    }
+
+    /// Observational events kept their existing jump-to-terminal behaviour.
+    func testOrdinaryEventsStillJump() {
+        XCTAssertTrue(shouldTapJumpToTerminal(
+            style: .other, hasReplyMode: false, hasTTY: true, clickToTerminalEnabled: true))
+    }
+
+    /// Nowhere to go, so the tap keeps its old meaning rather than silently doing nothing.
+    func testNoTTYMeansNoJump() {
+        XCTAssertFalse(shouldTapJumpToTerminal(
+            style: .reminder, hasReplyMode: false, hasTTY: false, clickToTerminalEnabled: true))
+    }
+
+    func testTheSettingIsHonoured() {
+        XCTAssertFalse(shouldTapJumpToTerminal(
+            style: .reminder, hasReplyMode: false, hasTTY: true, clickToTerminalEnabled: false))
+        XCTAssertFalse(shouldTapJumpToTerminal(
+            style: .other, hasReplyMode: false, hasTTY: true, clickToTerminalEnabled: false))
+    }
+}
+
+// MARK: - A persistent reminder is not something to bury
+
+final class PersistentReminderProtectionTests: XCTestCase {
+
+    private func waiting(session: String? = nil, project: String? = nil) -> EventSnapshot {
+        EventSnapshot(title: "Waiting for you", style: .reminder, hasReplyMode: false,
+                      isPersistent: true, hasProgress: false,
+                      sessionID: session, agentID: nil, project: project)
+    }
+
+    private func passing(session: String? = nil, project: String? = nil) -> EventSnapshot {
+        EventSnapshot(title: "Terminal", style: .other, hasReplyMode: false,
+                      isPersistent: false, hasProgress: false,
+                      sessionID: session, agentID: nil, project: project)
+    }
+
+    /// The hole this closes. An `AskUserQuestion` waiting on somebody is the same claim on their
+    /// attention as an Allow/Deny, and before this the very next tool call from *any* session
+    /// replaced it — the question vanished from the island while it was still on screen in the
+    /// terminal.
+    func testAnotherSessionsToolCallDoesNotBuryIt() {
+        XCTAssertEqual(
+            decideEventDisposition(current: waiting(session: "A"), currentExpired: false,
+                                   incoming: passing(session: "B")),
+            .dropTransient
+        )
+    }
+
+    /// Same session moving on to its next tool is a session whose question got answered. This is
+    /// also the clearing path for a tool the user cancelled, which never reaches `PostToolUse`.
+    func testItsOwnSessionMovingOnStillTakesOver() {
+        XCTAssertEqual(
+            decideEventDisposition(current: waiting(session: "A"), currentExpired: false,
+                                   incoming: passing(session: "A")),
+            .showImmediately
+        )
+    }
+
+    func testTwoWaitingSessionsQueueRatherThanOverwrite() {
+        XCTAssertEqual(
+            decideEventDisposition(current: waiting(session: "A"), currentExpired: false,
+                                   incoming: waiting(session: "B")),
+            .queueAsAction
+        )
+    }
+
+    /// A permission dialog must still be able to interrupt — it has a long-polling hook behind it.
+    func testAPermissionRequestStillQueuesBehindIt() {
+        let permission = EventSnapshot(title: "Permission", style: .action, hasReplyMode: false,
+                                       isPersistent: true, hasProgress: false,
+                                       sessionID: "B", agentID: nil, project: nil)
+        XCTAssertEqual(
+            decideEventDisposition(current: waiting(session: "A"), currentExpired: false,
+                                   incoming: permission),
+            .queueAsAction
+        )
+    }
+
+    /// The bare `Notification` ping is not persistent and keeps its old, unprotected behaviour —
+    /// it is a ping, not a wait.
+    func testANonPersistentReminderIsStillReplaceable() {
+        let ping = EventSnapshot(title: "Claude Code", style: .reminder, hasReplyMode: false,
+                                 isPersistent: false, hasProgress: false,
+                                 sessionID: "A", agentID: nil, project: nil)
+        XCTAssertEqual(
+            decideEventDisposition(current: ping, currentExpired: false,
+                                   incoming: passing(session: "B")),
+            .showImmediately
+        )
+    }
+
+    /// Falls back to (project, agentID) when neither carries a session id.
+    func testCrossProjectNoiseIsDroppedWithoutSessionIDs() {
+        XCTAssertEqual(
+            decideEventDisposition(current: waiting(project: "island"), currentExpired: false,
+                                   incoming: passing(project: "other")),
+            .dropTransient
+        )
+    }
+}

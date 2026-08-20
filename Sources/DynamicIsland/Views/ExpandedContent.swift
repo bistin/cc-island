@@ -94,6 +94,10 @@ struct ExpandedContentView: View {
             // (Allow/Deny) and reminders with quick-reply buttons. Collapsing
             // sets a 2 s dismiss timer that strands the long-polling hook.
             if event.style == .action || event.replyMode != nil { return }
+            // A panel showing a question the island cannot answer is a
+            // pointer: take the tap to the terminal holding the menu rather
+            // than folding the only sign that somebody is waiting.
+            if stateManager.jumpToTerminal(for: event) { return }
             stateManager.collapse()
         }
     }
