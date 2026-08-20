@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-08-20
+
+### Fixed
+- **Clicking an event now reaches the right pane under tmux.** 1.9.0 shipped
+  click-to-jump and it could not work for tmux users, for a reason nobody had
+  written down: a session under tmux has *two* ttys. The hook reports the
+  pane's — it asks `ps` for its parent's controlling terminal, which inside a
+  pane is the pane's pty — while the emulator knows that tab by the *client's*.
+  Measured on a live server: `pane_tty=/dev/ttys005` against
+  `client_tty=/dev/ttys007`. Every AppleScript lookup compared the reported tty
+  against `tty of s`, matched nothing every time, and fell through to "bring
+  some terminal to the front", landing on whatever tab happened to be showing.
+  `TmuxTargetResolver` joins `list-panes -a` with `list-clients` on the session
+  name to turn one tty into the other, and `TmuxBridge` selects the pane.
+- **The right pane in terminals with no AppleScript tab model at all.** Six of
+  the eight terminals the app knows about — Ghostty, WezTerm, Warp, Hyper,
+  kitty, Alacritty — could previously only be activated, never aimed. Under
+  tmux they can now be aimed, and it needs **no permission of any kind**: no
+  accessibility, no automation, no TCC prompt, because tmux is an ordinary
+  subprocess rather than cross-app automation.
+- **A vetoed login item can be removed, and the toggle stops springing back.**
+  In `requiresApproval` the app is registered but switched off in System
+  Settings; `register()` returns success and changes nothing, so a live toggle
+  moved and snapped back. It now renders off and non-interactive, with explicit
+  affordances for the two things that can actually be done.
+- **Settings re-reads the login item when the app regains focus.** The Login
+  Items deep link sends the window behind System Settings rather than closing
+  it, so the round trip it invites — leave, change the setting, come back —
+  landed on a stale toggle.
+- **Releases package the icon the bundle claims to have.** `Info.plist`
+  declares `CFBundleIconFile`; when the resource it names was missing the
+  release still built and silently shipped a generic icon. CI now reads the
+  declared name back out and fails if nothing matches.
+
+### Added
+- **Launch at login**, via `SMAppService.mainApp` — macOS 13+, no helper
+  bundle, no LaunchAgent plist. The system owns the state, so there is
+  deliberately no `UserDefaults` mirror: every read goes back to
+  `SMAppService.mainApp.status`. Settings → General → Startup, the menu bar's
+  "Open at Login", and read-only `--login-item-status`.
+- **An app icon**, drawn by `scripts/render-app-icon.swift` with AppKit and
+  turned into an `.icns` at build time — code rather than a checked-in binary,
+  so it stays regenerable and diffable.
+- **`DynamicIslandCore.TranscriptState`** reads what a session is doing from
+  the JSONL Claude Code already writes, so a session started before the hook
+  was installed is no longer invisible. `working` / `idle` / `unknown`, pure and
+  unit-tested. There is deliberately **no `waiting`**: Claude Code writes an
+  assistant `tool_use` and its `tool_result` together *after the tool returns*,
+  so the pending window never reaches disk — measured three times from inside a
+  live session. Nothing is wired to the UI yet.
+- **`--reveal-tty <tty>`** runs the same focus routes a click runs and reports
+  which one answered, so "clicking jumps to the wrong tab" can be diagnosed
+  without shipping somebody a build to try.
+- **Codex hook integration strengthened**, and the Allow/Deny permission
+  timeout is configurable (default 5 minutes).
+
+### Changed
+- Display name is now **CLI Island**.
+- CI fails when a number the docs quote disagrees with the code
+  (`scripts/check-claimed-numbers.sh`). It ran red the first time it was
+  pointed at `main`: the README claimed 264 tests against a run of 277, and its
+  per-target breakdown said 68 / 20 where the real figures were 149 / 128. A
+  claim that cannot be found is a failure rather than a skip, so a reworded
+  sentence cannot quietly stop being checked.
+
 ## [1.9.0] - 2026-06-08
 
 ### Added
