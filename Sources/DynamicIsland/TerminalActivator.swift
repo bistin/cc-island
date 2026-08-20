@@ -4,15 +4,26 @@ import Foundation
 /// Bring the terminal tab whose controlling TTY matches `tty` to the front.
 ///
 /// Used by the ear / capsule tap handler so a click on the island jumps to
-/// the actual terminal pane running Claude Code. Works against Terminal.app
-/// and iTerm2 (the two terminals with rich AppleScript tab support); for
-/// everything else we fall back to activating whatever terminal app is
-/// frontmost so the user at least gets back to *a* terminal.
+/// the actual terminal pane running Claude Code.
+///
+/// Three routes, tried in that order:
+///
+/// - **tmux**, via ``TmuxBridge`` — selects the pane whichever emulator is
+///   drawing it, needs no permission at all, and is the only route to the
+///   right pane for Ghostty, WezTerm, Warp, Hyper, kitty and Alacritty,
+///   none of which expose a tab model to AppleScript. It also translates
+///   the pane's tty into the one the emulator knows the tab by, which is
+///   what makes the AppleScript route below work for tmux users at all.
+/// - **AppleScript** against Terminal.app and iTerm2, the two terminals
+///   with a rich tab model.
+/// - **Activate whatever terminal is running**, so the user at least gets
+///   back to *a* terminal.
 ///
 /// Safety: `tty` is decoded by `decodeTTY` upstream, which only admits
 /// `/dev/ttys<digits>` or `/dev/pts/<digits>`. That keeps the AppleScript
 /// interpolation below from being a shell-injection sink even though the
-/// payload originates from an HTTP POST.
+/// payload originates from an HTTP POST. The tmux route passes it as argv
+/// with no shell, so it is not a sink there under any narrowing.
 enum TerminalActivator {
     /// Cheap synchronous check: is any supported terminal app currently
     /// running? Called on the main thread before `activate(tty:)` so the
@@ -23,45 +34,68 @@ enum TerminalActivator {
     }
 
     /// Fire-and-forget: focus the terminal tab whose controlling TTY
-    /// matches `tty`. Async-dispatched on the main queue so the caller's
-    /// dismiss animation gets to start before AppleScript blocks
-    /// (~100-500ms on iTerm2 with many windows).
+    /// matches `tty`.
     ///
-    /// Must run on main: NSAppleScript from a background queue has no
-    /// CFRunLoop and silently swallows the AppleEvent dispatch + TCC
+    /// **Two phases, on two queues, and the split is not cosmetic.**
+    ///
+    /// tmux first, off the main thread. A session running under tmux has
+    /// *two* ttys — the pane's, which is what the hook reports, and the
+    /// client's, which is what an emulator knows the tab by — and they are
+    /// different numbers. Every AppleScript lookup below compares against
+    /// the reported tty, so before this existed none of them could ever
+    /// match for a tmux user: the whole thing fell through to "bring some
+    /// terminal forward", landing on whatever tab happened to be showing.
+    /// `TmuxBridge.reveal` selects the right pane and hands back the tty
+    /// the emulator actually owns. It is a subprocess, needs no run loop
+    /// and no TCC permission, and must not sit on the main thread.
+    ///
+    /// Then AppleScript, on main: NSAppleScript from a background queue has
+    /// no CFRunLoop and silently swallows the AppleEvent dispatch + TCC
     /// permission prompt; NSWorkspace.runningApplications is also
-    /// documented main-thread-only.
+    /// documented main-thread-only. Hopping back also means the caller's
+    /// dismiss animation has started before AppleScript blocks (~100-500ms
+    /// on iTerm2 with many windows).
     ///
     /// Callers must precheck `hasRunningTerminal()` — when no terminal is
     /// running we do nothing here, leaving the UI decision (expand vs
     /// dismiss) to the caller.
     static func activate(tty: String) {
-        DispatchQueue.main.async {
-            let runningIDs = Set(
-                NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier }
-            )
-            if runningIDs.contains("com.apple.Terminal"),
-               runScript(terminalAppScript(tty: tty)) {
-                return
-            }
-            if runningIDs.contains("com.googlecode.iterm2"),
-               runScript(iTermScript(tty: tty)) {
-                // AppleScript `activate` doesn't reliably surface
-                // fullscreen-Space iTerm windows from an LSUIElement
-                // caller — belt-and-suspenders with NSWorkspace.
-                NSWorkspace.shared.runningApplications
-                    .first { $0.bundleIdentifier == "com.googlecode.iterm2" }?
-                    .activate(options: [.activateAllWindows])
-                return
-            }
-            // No tab matched. Surface whichever terminal app is running
-            // so the user lands somewhere familiar.
-            if let fallbackID = knownTerminalBundleIDs
-                .first(where: { runningIDs.contains($0) }) {
-                NSWorkspace.shared.runningApplications
-                    .first { $0.bundleIdentifier == fallbackID }?
-                    .activate(options: [.activateAllWindows])
-            }
+        DispatchQueue.global(qos: .userInitiated).async {
+            // nil means "not a tmux pane", which is the ordinary case; carry
+            // on with the tty we were given rather than giving up.
+            let emulatorTTY = TmuxBridge.reveal(tty: tty) ?? tty
+            DispatchQueue.main.async { activateFrontmost(tty: emulatorTTY) }
+        }
+    }
+
+    /// The AppleScript half. Main thread only — see ``activate(tty:)``.
+    private static func activateFrontmost(tty: String) {
+        let runningIDs = Set(
+            NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier }
+        )
+        if runningIDs.contains("com.apple.Terminal"),
+           runScript(terminalAppScript(tty: tty)) {
+            return
+        }
+        if runningIDs.contains("com.googlecode.iterm2"),
+           runScript(iTermScript(tty: tty)) {
+            // AppleScript `activate` doesn't reliably surface
+            // fullscreen-Space iTerm windows from an LSUIElement
+            // caller — belt-and-suspenders with NSWorkspace.
+            NSWorkspace.shared.runningApplications
+                .first { $0.bundleIdentifier == "com.googlecode.iterm2" }?
+                .activate(options: [.activateAllWindows])
+            return
+        }
+        // No tab matched — either the terminal has no AppleScript tab model
+        // at all, or tmux already put the right pane in front of a window we
+        // cannot address. Surface whichever terminal is running so the user
+        // lands somewhere familiar; under tmux that is now the right pane.
+        if let fallbackID = knownTerminalBundleIDs
+            .first(where: { runningIDs.contains($0) }) {
+            NSWorkspace.shared.runningApplications
+                .first { $0.bundleIdentifier == fallbackID }?
+                .activate(options: [.activateAllWindows])
         }
     }
 
