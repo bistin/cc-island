@@ -59,6 +59,46 @@ Decision logic lives in `DynamicIslandCore.LoginItemState` so it's unit-testable
 
 Surfaces: Settings → General → Startup, the menu bar's "Open at Login" item, and `--login-item-status` (read-only; registration stays a deliberate user action so a stray CLI call can't add a login item). Running a bare `swift build` binary reports `unavailable` and disables the toggle — `Bundle.main` isn't an `.app` there, so there's nothing for `SMAppService` to register.
 
+## Session state from the transcript
+
+`DynamicIslandCore.TranscriptState` derives what a session is doing from the JSONL Claude Code
+already writes at `~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`. It exists because every
+event the island shows arrives from a hook, and that has a hole shaped exactly like the hook: a
+session started before the hook was installed is invisible, and between two pushes the island is
+showing the last thing that happened rather than what is happening.
+
+`read(lines:now:staleAfter:)` is pure and takes lines rather than a path, the same split
+`HTTPParser` and `ScreenResolver` use. The markers, all confirmed against real transcripts:
+
+- a turn ends with a `system` entry whose `subtype` is `turn_duration` — the cleanest marker in
+  the file, and the only one that means "nothing is running" outright
+- `assistant` with `stop_reason: end_turn` is the same fact one entry earlier; both are read
+  because a file caught between them would otherwise report a finished turn as still running
+- an interrupted turn writes no `turn_duration` at all, so a `user` entry carrying
+  `interruptedMessageId` ends the turn instead
+- roughly a third of the file is housekeeping (`file-history-snapshot`, `ai-title`, `pr-link`,
+  `attachment`, …) written *between* the entries that matter, so "the last line" is the wrong
+  question — those types decide nothing
+
+**`waiting` is not in the transcript, and that was measured rather than assumed.** Claude Code
+writes an assistant `tool_use` and its `tool_result` together, *after the tool returns*; the
+pending window never reaches disk. Sampled three times from inside a live session with a tool call
+demonstrably in flight, the transcript reported zero outstanding `tool_use` entries and its newest
+entry predated the call by 26, 32 and 54 seconds. So an unanswered permission prompt and an
+`AskUserQuestion` waiting on a person look from here exactly like a session that is quietly busy —
+at that moment they are the same bytes. There is therefore no `waiting` case: the
+`PermissionRequest` hook stays the source for that, and this file does not try to replace it.
+
+Stale `working` decays to `unknown`, never to `idle` (default `staleAfter` 300s — appends happen
+once per completed tool and a single `Bash` step may run for ten minutes). A session that stopped
+writing mid-turn was killed, or slept, or is on a very long tool; none of those is a finished turn,
+and only a finished turn writes `turn_duration`. `unknown` is a real answer throughout: a
+transcript that cannot be read is not a session that ended.
+
+Validated against all 30 transcripts on the development machine: 25 idle, 3 unknown (each ending
+mid-turn with no `turn_duration`), 2 working — one of them the session doing the validation, the
+other confirmed live by its mtime and a matching `claude` process.
+
 ## Hook Integration
 
 `Sources/island-hook/main.swift` is the canonical universal hook entry point — a Foundation-only Swift binary (~109KB) that handles Claude Code, GitHub Copilot, and OpenAI Codex by sniffing payload shape (`hook_event_name` casing vs `toolName` at root). Reads JSON from stdin, dispatches via `IslandHookCore` (pure-logic library, fully unit-tested), and POSTs formatted events to `127.0.0.1:9423/event`. Must exit 0 so it never blocks the caller. PermissionRequest is the only event that emits stdout (provider-specific allow/deny JSON).
