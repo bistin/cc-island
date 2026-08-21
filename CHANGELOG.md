@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-08-21
+
+### Added
+- **The island says when a session is waiting for you.** `AskUserQuestion` and
+  `ExitPlanMode` are the tools whose *execution is a person answering* —
+  everything else the island shows is something that happened; these have not
+  happened yet and will not until somebody looks. Across the transcripts on one
+  machine, 58 of them were answered at a median of 71 seconds and a maximum of
+  **10.9 hours**. Ten hours is not deliberation, it is nobody knowing they were
+  being asked.
+
+  It arrives as a pulsing `reminder` that does not dismiss itself, opens
+  expanded with the question and its options (or a plan and its body), and is
+  cleared by the matching `PostToolUse` — which needed the matcher widening,
+  since a waiting marker nothing clears is worse than never showing one. It also
+  survives other sessions: a persistent reminder now counts as mid-decision, so
+  a `Bash` in another project can no longer bury a question that is still on
+  screen. Tapping it focuses that session's pane rather than dismissing it.
+
+  The event was always arriving — `PreToolUse` has no matcher — and was being
+  thrown away as an ordinary two-second ping. Both halves of the timing were
+  measured: the transcript cannot show a pending question at all, because Claude
+  Code writes an assistant `tool_use` and its `tool_result` together *after* the
+  tool returns; `PreToolUse` can, and a capture on the live port showed the POST
+  arriving **18.3 seconds before the answer**, while the menu was still on
+  screen.
+
+- **`DynamicIslandCore.TranscriptState`** reads what a session is doing from the
+  JSONL Claude Code already writes, so a session started before the hook was
+  installed is no longer invisible. `working` / `idle` / `unknown`, pure and
+  unit-tested, with a locator that gets the project-directory slug right: *every
+  character that is not an ASCII letter or digit* becomes a dash, not just the
+  separators. Proven rather than assumed — `/Users/you/Desktop/毒` lives at
+  `-Users-you-Desktop--`, and the naive rule's `…-Desktop-毒` does not exist.
+  Nothing is wired to the UI yet.
+
+### Fixed
+- **Reading a transcript no longer costs half a second.** They grow without
+  bound — 44 MB and 31 MB on the development machine — and parsing every line of
+  one cost 281 ms and 518 ms. Only the tail is read now, widening eightfold when
+  a window lands inside a single record. Across all 31 transcripts on that
+  machine the tail read agrees with the full read on every verdict, at a worst
+  case of 18.5 ms against 529.6 ms.
+- **A session id that is not a plain filename is refused.** It arrives in an HTTP
+  payload and is not slugged, and `appendingPathComponent` treats a `/` in it as
+  structure, so `..` would have climbed out of the transcript tree.
+
+### Changed
+- The permission `PostToolUse` matcher now carries `AskUserQuestion` and
+  `ExitPlanMode`, derived from one shared list rather than spelled out twice.
+  Changing it makes `settings.json` drift, so the launch-time sync reinstalls the
+  hooks on its own — nothing for you to do.
+
 ## [1.10.0] - 2026-08-20
 
 ### Fixed
