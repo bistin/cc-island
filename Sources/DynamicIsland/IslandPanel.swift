@@ -191,7 +191,8 @@ class IslandPanel: NSPanel {
                 hasNotch: hasNotch,
                 sessionRows: self.stateManager.activeSessions.count,
                 detailLines: self.stateManager.currentEvent?.detail
-                    .map { min($0.split(separator: "\n").count, 10) } ?? 0
+                    .map { min($0.split(separator: "\n").count, 10) } ?? 0,
+                decisionRows: decisionRowCount(self.stateManager.currentEvent)
             )
             let newFrame = Self.topCenteredFrame(on: target, size: size)
             self.setFrame(newFrame, display: true)
@@ -222,12 +223,14 @@ class IslandPanel: NSPanel {
         event: IslandEvent?,
         hasNotch: Bool,
         sessionRows: Int,
-        detailLines: Int
+        detailLines: Int,
+        decisionRows: Int = 0
     ) -> CGSize {
         var size = mode.size(
             hasNotch: hasNotch,
             sessionRows: sessionRows,
-            detailLines: detailLines
+            detailLines: detailLines,
+            decisionRows: decisionRows
         )
         if hasNotch && mode != .expanded {
             size.height = notchHeight

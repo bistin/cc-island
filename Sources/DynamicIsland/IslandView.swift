@@ -43,7 +43,8 @@ struct IslandRootView: View {
             event: stateManager.currentEvent,
             hasNotch: hasNotch,
             sessionRows: rows,
-            detailLines: detailLines
+            detailLines: detailLines,
+            decisionRows: decisionRowCount(stateManager.currentEvent)
         )
         panel?.updateSize(to: size)
     }
@@ -114,4 +115,13 @@ struct IslandRootView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: stateManager.isThinking)
         .animation(.spring(response: 0.45, dampingFraction: 0.78), value: stateManager.mode)
     }
+}
+
+/// How many rows of controls sit under the detail. Allow/Deny brings its own jump-to-terminal row
+/// with it, which is why an action counts as two rather than one — the row that was missing from
+/// the height sum and cost the diff its space.
+func decisionRowCount(_ event: IslandEvent?) -> Int {
+    guard let event else { return 0 }
+    if event.style == .action { return 2 }
+    return event.replyMode == nil ? 0 : 1
 }

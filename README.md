@@ -52,7 +52,7 @@ cd cc-island
 # Build (produces both DynamicIsland app and the hook binary)
 swift build -c release
 
-# Run unit tests (384 tests: hook payload formatting, HTTP parser, screen resolver, and more)
+# Run unit tests (390 tests: hook payload formatting, HTTP parser, screen resolver, and more)
 swift test
 
 # Render the app icon (AppKit only — no design tool needed)
@@ -354,7 +354,7 @@ Sources/
     └── main.swift                      # I/O shell — reads stdin, dispatches via core, POSTs
 Tests/
 ├── IslandHookCoreTests/            # 168 tests — payload building, plan parsing, stop replies
-└── DynamicIslandCoreTests/         # 216 tests — HTTP framing, event decoding, login-item state
+└── DynamicIslandCoreTests/         # 222 tests — HTTP framing, event decoding, login-item state
 
 hooks/
 └── claude-settings-example.json    # Reference config for manual setup

@@ -23,6 +23,7 @@ struct DiffDetailView: View {
     }
 
     private let maxVisibleHeight: CGFloat = 160
+    private let minVisibleHeight: CGFloat = 46
 
     var body: some View {
         Group {
@@ -31,7 +32,11 @@ struct DiffDetailView: View {
                     linesStack
                         .padding(8)
                 }
-                .frame(maxHeight: maxVisibleHeight)
+                // A minimum as well as a maximum. A ScrollView with only a maximum does not clip
+                // when the space runs out — it collapses to nothing, and a detail that vanishes
+                // silently is worse than one that is cut short, because nothing on screen says
+                // anything is missing.
+                .frame(minHeight: minVisibleHeight, maxHeight: maxVisibleHeight)
             } else {
                 truncatedStack
                     .padding(8)

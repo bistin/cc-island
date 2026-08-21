@@ -191,3 +191,29 @@ public func shouldTapJumpToTerminal(
     if style == .action || hasReplyMode { return false }
     return true
 }
+
+/// Extra height the expanded panel needs beyond its base, in points.
+///
+/// **The base reserves room for about three lines of detail and nothing else, which is why a
+/// permission dialog lost its diff entirely.** An `action` event stacks two rows of controls under
+/// the detail — Allow/Deny, and the jump-to-terminal row — and none of that was in the
+/// arithmetic, so the space came out of the detail. The detail is rendered in a `ScrollView` with
+/// a maximum height and no minimum, which does not clip when it is squeezed: it collapses to
+/// nothing. The panel looked deliberate, and the diff the whole dialog exists to show you was
+/// simply absent.
+///
+/// Found while taking screenshots for the README, by noticing that the same payload rendered its
+/// diff as a `reminder` and rendered nothing as an `action`.
+public func expandedPanelExtraHeight(
+    sessionRows: Int,
+    detailLines: Int,
+    decisionRows: Int
+) -> CGFloat {
+    let tree: CGFloat = sessionRows >= 2 ? CGFloat(sessionRows) * 18 + 12 : 0
+    let detail: CGFloat = detailLines > 3 ? CGFloat(detailLines - 3) * 14 : 0
+    // Each row of controls is a 44pt tap target plus the gap above it. Counted rather than
+    // folded into the base, so a layout that grows a third row cannot quietly take the space
+    // back out of the detail.
+    let decisions: CGFloat = CGFloat(max(0, decisionRows)) * 52
+    return tree + detail + decisions
+}
