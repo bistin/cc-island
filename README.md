@@ -302,29 +302,54 @@ DynamicIsland --help
 ```
 Sources/
 ├── DynamicIsland/                  # The app — AppKit + SwiftUI
-│   ├── App.swift                       # entry, CLI, NSAlert install prompt, menu bar
-│   ├── HookInstaller.swift             # installs Claude / Copilot / Codex hooks
-│   ├── IslandPanel.swift               # NSPanel, per-screen notch detection, relocate()
-│   ├── IslandState.swift               # state manager, immediate event display
-│   ├── IslandView.swift                # SwiftUI views (ears, thinking pulse, source stripe)
+│   ├── App.swift                       # entry, CLI flags, NSAlert install prompt, menu bar
+│   ├── HookInstaller.swift             # installs Claude / Copilot / Codex hooks, syncs on drift
+│   ├── CodexHooksConfig.swift          # Codex's own hooks.json shape and migration
 │   ├── LocalServer.swift               # HTTP server (Network framework, port 9423)
-│   ├── NotificationMonitor.swift       # macOS system notification listener
-│   ├── TmuxBridge.swift                # selects a pane, no TCC permission needed
+│   ├── IslandPanel.swift               # NSPanel, per-screen notch detection, relocate()
+│   ├── IslandState.swift               # state manager, dispatch, expansion, session tree
+│   ├── IslandView.swift                # top-level SwiftUI composition
+│   ├── ScreenFollower.swift            # 50ms cursor poll + 200ms dwell debounce
 │   ├── NSScreen+Display.swift          # displayID / containing(_:) helpers
-│   └── ScreenFollower.swift            # 50ms cursor poll + 200ms dwell debounce
+│   ├── NotificationMonitor.swift       # macOS system notification listener
+│   ├── TerminalActivator.swift         # tmux, then AppleScript, then activate whatever is running
+│   ├── TmuxBridge.swift                # selects a pane, no TCC permission needed
+│   ├── LoginItem.swift                 # SMAppService wrapper — no UserDefaults mirror
+│   ├── SettingsView.swift              # Settings window contents
+│   ├── SettingsWindowController.swift  # retained window, isReleasedWhenClosed = false
+│   ├── SelfTest.swift                  # Diagnostics → send a test event / permission flow
+│   └── Views/
+│       ├── Ears.swift                      # the two halves that flank the notch
+│       ├── Capsule.swift                   # the pill drawn on displays with no notch
+│       ├── ExpandedContent.swift           # the panel below the notch
+│       ├── Detail.swift                    # diff / preview rendering inside it
+│       ├── Reply.swift                     # Allow/Deny, quick replies, inline reply field
+│       ├── Progress.swift                  # bar and ring
+│       ├── Pulse.swift                     # the attention animation
+│       └── DiagnosticsTab.swift            # Settings → Diagnostics
 ├── IslandHookCore/                 # Pure-logic hook library (Foundation only)
+│   ├── HookPlan.swift                  # parseHookPlan + the payload every event is decorated with
+│   ├── PayloadBuilder.swift            # build{PreToolUse,PostToolUse,…}Payload, InteractiveTools
 │   ├── Format.swift                    # truncate, basename, diffLines, buildEditDiff
-│   ├── HookPlan.swift                  # parseHookPlan + extension methods
-│   └── PayloadBuilder.swift            # build{PreToolUse,PostToolUse,...}Payload
+│   ├── StopReply.swift                 # timeouts, question detection, decision:block encoding
+│   ├── PreToolCache.swift              # FIFO correlation between PreToolUse and PermissionRequest
+│   ├── TTYDetect.swift                 # the parent's controlling terminal, via ps
+│   └── TmuxSocket.swift                # the socket path out of $TMUX, so -L servers are reachable
 ├── DynamicIslandCore/              # Pure-logic app library (Foundation only)
 │   ├── HTTPParser.swift                # RFC 7230 request framing (duplicate CL / TE / oversize)
+│   ├── EventDecoder.swift              # payload → event fields, including the strict tty allow-list
+│   ├── EventDisposition.swift          # what to do with an incoming event, what expands, where a tap goes
 │   ├── TranscriptState.swift           # working/idle/unknown from Claude Code's own JSONL
 │   ├── TmuxTarget.swift                # pane tty → pane id + the client tty an emulator knows
 │   ├── Compat.swift                    # what this build assumes, and what breaks when it changes
+│   ├── LoginItemState.swift            # what to call and what to render, per SMAppService status
+│   ├── ResponseWaiterStore.swift       # the long-poll waiters behind Allow/Deny
+│   ├── AtomicFileWriter.swift          # write-then-rename, with a backup, for settings.json
+│   ├── HookCommandParse.swift          # recognising our own entries in someone else's config
+│   ├── HexColor.swift                  # #rrggbb → RGB for the configurable source colours
 │   └── ScreenResolver.swift            # point-in-rect screen lookup
 └── island-hook/                    # Tiny CLI binary deployed into each tool's hook dir
     └── main.swift                      # I/O shell — reads stdin, dispatches via core, POSTs
-
 Tests/
 ├── IslandHookCoreTests/            # 168 tests — payload building, plan parsing, stop replies
 └── DynamicIslandCoreTests/         # 207 tests — HTTP framing, event decoding, login-item state
