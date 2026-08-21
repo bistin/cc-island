@@ -283,6 +283,30 @@ mode is the bad one.
 Changing the matcher makes `settings.json` drift, so the launch-time `syncIfOutdated` reinstalls
 the hooks on its own — nothing for the user to do.
 
+## The expanded panel's height
+
+`DynamicIslandCore.expandedPanelExtraHeight(sessionRows:detailLines:decisionRows:)` decides how far
+the panel grows past its base, and the third argument exists because leaving it out cost the
+permission dialog the diff it exists to show.
+
+The base reserves room for about three lines of detail **and nothing else**. An `action` stacks two
+further rows under that detail — Allow/Deny, and the jump-to-terminal row — and neither was in the
+sum, so the space came out of the detail. That would merely have been ugly if the detail clipped;
+it does not. It renders in a `ScrollView` with a maximum height and no minimum, and a `ScrollView`
+squeezed to nothing **collapses silently**. The dialog looked deliberate, and the colored diff this
+file has described since v1.7 was simply absent. Nobody would report it, because it looks like the
+dialog was always that shape.
+
+Two changes, and the second is the one that matters more:
+
+- rows of controls are **counted**, not folded into the base, so a layout that grows a third row
+  cannot quietly take the space back out of the detail again
+- the detail's ScrollView has a **minimum** height as well as a maximum: squeezed, it should clip,
+  because a detail that vanishes leaves nothing on screen to say anything is missing
+
+Found while taking README screenshots, by noticing that one payload rendered its diff as a
+`reminder` and rendered nothing as an `action`.
+
 ## Permission Flow
 
 `PermissionRequest` hook POSTs an `action`-style event (Permission title + tool detail), then long-polls `GET /response` for up to the permission-timeout setting (default 300s / 5 min). The UI buttons call `LocalServer.setResponse("allow"|"deny")`, which resumes the waiter. If no waiter is present the value is stored in `pendingResponse` for the next poll — but never persisted past a single delivery, to avoid stale clicks leaking into future requests. On timeout the hook exits silently and Claude Code falls back to its normal permission prompt.

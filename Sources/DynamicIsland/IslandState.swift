@@ -240,16 +240,20 @@ enum IslandMode: Equatable {
     /// Window size — compact hugs the notch, expanded drops below it.
     /// `sessionRows` bumps the expanded height to fit the session tree;
     /// `detailLines` bumps it to fit a multi-line diff detail block.
-    func size(hasNotch: Bool, sessionRows: Int = 0, detailLines: Int = 0) -> CGSize {
-        let treeExtra: CGFloat = sessionRows >= 2 ? CGFloat(sessionRows) * 18 + 12 : 0
-        // Base 130 already reserves space for ~3 detail lines; only pay more when
-        // the diff is taller than that.
-        let detailExtra: CGFloat = detailLines > 3 ? CGFloat(detailLines - 3) * 14 : 0
+    /// `decisionRows` counts the rows of controls stacked under the detail —
+    /// Allow/Deny and the jump-to-terminal row, or a row of quick replies.
+    /// They used to be missing from this sum, and the space came out of the
+    /// detail's ScrollView, which has no minimum height and so collapsed to
+    /// nothing rather than clipping. See `expandedPanelExtraHeight`.
+    func size(hasNotch: Bool, sessionRows: Int = 0, detailLines: Int = 0,
+              decisionRows: Int = 0) -> CGSize {
+        let extra = expandedPanelExtraHeight(
+            sessionRows: sessionRows, detailLines: detailLines, decisionRows: decisionRows)
         if hasNotch {
             let w = IslandPanel.earWidth * 2 + IslandPanel.notchWidth
             switch self {
             case .compact: return CGSize(width: w, height: IslandPanel.notchHeight + 30)
-            case .expanded: return CGSize(width: w, height: IslandPanel.notchHeight + 130 + treeExtra + detailExtra)
+            case .expanded: return CGSize(width: w, height: IslandPanel.notchHeight + 130 + extra)
             case .hidden: return CGSize(width: w, height: IslandPanel.notchHeight + 30)
             }
         } else {
@@ -258,7 +262,7 @@ enum IslandMode: Equatable {
             // the window edge, and so clicks fall through beside the pill.
             switch self {
             case .compact: return CGSize(width: 260, height: 68)
-            case .expanded: return CGSize(width: 420, height: 210 + treeExtra + detailExtra)
+            case .expanded: return CGSize(width: 420, height: 210 + extra)
             case .hidden: return CGSize(width: 260, height: 68)
             }
         }

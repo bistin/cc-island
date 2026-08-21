@@ -363,3 +363,54 @@ final class PersistentReminderProtectionTests: XCTestCase {
         )
     }
 }
+
+// MARK: - The panel has to be tall enough for what is in it
+
+final class ExpandedPanelHeightTests: XCTestCase {
+
+    /// The bug this exists for. An `action` stacks two rows of controls under the detail —
+    /// Allow/Deny, and the jump-to-terminal row — and none of that was in the sum, so the space
+    /// came out of the detail. The detail is a ScrollView with a maximum and no minimum, which
+    /// does not clip when squeezed: it collapses. The dialog looked deliberate and the diff it
+    /// exists to show was simply absent.
+    func testDecisionRowsAreCountedRatherThanTakenOutOfTheDetail() {
+        let withButtons = expandedPanelExtraHeight(sessionRows: 0, detailLines: 3, decisionRows: 2)
+        let without = expandedPanelExtraHeight(sessionRows: 0, detailLines: 3, decisionRows: 0)
+        XCTAssertGreaterThan(withButtons, without)
+        XCTAssertEqual(withButtons - without, 104, "two 44pt tap targets plus their gaps")
+    }
+
+    /// The base already covers about three lines, so a short detail costs nothing extra — that
+    /// part was never wrong and should not start growing the panel now.
+    func testAShortDetailStillCostsNothing() {
+        XCTAssertEqual(expandedPanelExtraHeight(sessionRows: 0, detailLines: 3, decisionRows: 0), 0)
+        XCTAssertEqual(expandedPanelExtraHeight(sessionRows: 0, detailLines: 0, decisionRows: 0), 0)
+    }
+
+    func testATallDetailGrowsThePanelLineByLine() {
+        XCTAssertEqual(expandedPanelExtraHeight(sessionRows: 0, detailLines: 5, decisionRows: 0), 28)
+    }
+
+    /// One session is just the event; the tree only earns its space once there is something to
+    /// compare.
+    func testTheSessionTreeOnlyCostsWhenThereIsMoreThanOne() {
+        XCTAssertEqual(expandedPanelExtraHeight(sessionRows: 1, detailLines: 0, decisionRows: 0), 0)
+        XCTAssertGreaterThan(expandedPanelExtraHeight(sessionRows: 2, detailLines: 0, decisionRows: 0), 0)
+    }
+
+    /// A permission dialog on a busy machine is all three at once, and the panel has to fit the
+    /// sum rather than whichever one the layout happened to be written for.
+    func testTheThreeAddUpRatherThanCompeting() {
+        let all = expandedPanelExtraHeight(sessionRows: 3, detailLines: 8, decisionRows: 2)
+        let tree = expandedPanelExtraHeight(sessionRows: 3, detailLines: 0, decisionRows: 0)
+        let detail = expandedPanelExtraHeight(sessionRows: 0, detailLines: 8, decisionRows: 0)
+        let rows = expandedPanelExtraHeight(sessionRows: 0, detailLines: 0, decisionRows: 2)
+        XCTAssertEqual(all, tree + detail + rows)
+    }
+
+    /// Nothing here should ever shrink the panel below its base.
+    func testTheExtraIsNeverNegative() {
+        XCTAssertGreaterThanOrEqual(
+            expandedPanelExtraHeight(sessionRows: -1, detailLines: -5, decisionRows: -2), 0)
+    }
+}
