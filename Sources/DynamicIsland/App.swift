@@ -183,6 +183,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // so SettingsView's HooksTab can share the same string.
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // First line in the file, so everything below it has a day, a build and
+        // a pid to belong to.
+        Log.banner(
+            version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?",
+            build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        )
         // #41: register UserDefaults defaults so unset reads return the
         // documented values rather than 0 / false at the bare API level.
         // Per-call sites still use `positiveDouble(...)` as a belt-and-
@@ -387,7 +393,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // auto-sync UserDefault so a user can opt out from the
             // Settings panel.
             if dynamicIslandUserDefaults.bool(forKey: autoSyncClaudeKey) {
-                _ = HookInstaller.syncIfOutdated(target: .claudeCode)
+                // Says whether the deployed hook was rewritten. An upgrade that
+                // silently failed to redeploy leaves the old binary in place and
+                // every symptom pointing at the app instead.
+                Log.write("hooks(claude): \(HookInstaller.syncIfOutdated(target: .claudeCode))")
             }
         case "declined":
             break
@@ -400,7 +409,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // hooks after app upgrades. Same per-provider gate.
         if HookInstaller.hasExistingInstall(target: .codex),
            dynamicIslandUserDefaults.bool(forKey: autoSyncCodexKey) {
-            _ = HookInstaller.syncIfOutdated(target: .codex)
+            Log.write("hooks(codex): \(HookInstaller.syncIfOutdated(target: .codex))")
         }
     }
 

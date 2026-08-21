@@ -355,6 +355,29 @@ It listed **19 of 44 files** when the check was added — not by decision, just 
 back. The tree is complete now, and complete is the point: "the important ones" is a rule no
 script can check, while "all of them" is one it can.
 
+## The log file
+
+`~/Library/Logs/CLI Island.log`. An app with no window and no Dock icon says nothing at all when
+something goes wrong, and often the diagnosis already exists and is simply unreachable:
+`LocalServer` has always printed "Server failed" on a bind error, and an `LSUIElement` app launched
+from Finder has no stdout anybody will read. That exact case came up during development — the app
+running, nothing listening on 9423, and no way to tell from outside except noticing that events had
+stopped arriving.
+
+**Routes and outcomes, never payloads.** What a session asked, what a file contained, what a command
+was — none of that belongs in a file that outlives the moment and that somebody may paste into an
+issue. What belongs is which path the code took and what it got back: bound or failed, tmux or
+AppleScript or neither, hooks rewritten or already in sync. That covers the failures that are
+otherwise invisible from outside, including the one where a click lands on the right *app* by luck
+and the wrong tab — which looks identical to success unless something says no tab matched.
+
+`DynamicIslandCore.LogLine` holds the format and the trim so both are testable without a disk.
+Stamps carry milliseconds, because the questions this file answers are about order and latency and
+second resolution collapses exactly the gaps worth seeing. The file is trimmed to its most recent
+half at 1 MiB, cut at a line boundary — half rather than all so trimming is rare, and at a boundary
+so the first surviving line is not a fragment that reads like corruption. Writes are queued off the
+caller's thread: a logger that can break the thing it is observing is worse than no logger.
+
 ## Conventions
 
 - Pure Swift, no external dependencies — only Foundation, AppKit, SwiftUI, Network frameworks

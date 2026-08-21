@@ -63,7 +63,10 @@ enum TerminalActivator {
         DispatchQueue.global(qos: .userInitiated).async {
             // nil means "not a tmux pane", which is the ordinary case; carry
             // on with the tty we were given rather than giving up.
-            let emulatorTTY = TmuxBridge.reveal(tty: tty, socket: tmuxSocket) ?? tty
+            let revealed = TmuxBridge.reveal(tty: tty, socket: tmuxSocket)
+            Log.write(revealed.map { "activate: tmux selected the pane, emulator tty \($0)" }
+                      ?? "activate: \(tty) is not a tmux pane")
+            let emulatorTTY = revealed ?? tty
             DispatchQueue.main.async { activateFrontmost(tty: emulatorTTY) }
         }
     }
@@ -108,6 +111,7 @@ enum TerminalActivator {
         )
         if runningIDs.contains("com.apple.Terminal"),
            runScript(terminalAppScript(tty: tty)) {
+            Log.write("activate: Terminal.app matched \(tty)")
             return
         }
         if runningIDs.contains("com.googlecode.iterm2"),
@@ -118,6 +122,7 @@ enum TerminalActivator {
             NSWorkspace.shared.runningApplications
                 .first { $0.bundleIdentifier == "com.googlecode.iterm2" }?
                 .activate(options: [.activateAllWindows])
+            Log.write("activate: iTerm2 matched \(tty)")
             return
         }
         // No tab matched — either the terminal has no AppleScript tab model
@@ -129,6 +134,12 @@ enum TerminalActivator {
             NSWorkspace.shared.runningApplications
                 .first { $0.bundleIdentifier == fallbackID }?
                 .activate(options: [.activateAllWindows])
+            // Which tab you land on is not decided by anything here. Worth a
+            // line, because "it jumped to the wrong tab" and "it jumped to the
+            // right app by luck" look identical from outside.
+            Log.write("activate: no tab matched \(tty), brought \(fallbackID) forward")
+        } else {
+            Log.write("activate: no tab matched \(tty) and no known terminal is running")
         }
     }
 
