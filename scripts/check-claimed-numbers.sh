@@ -60,10 +60,15 @@ if [ -z "$port" ]; then
 else
   # Every port the docs name, from either shape it is written in. A doc that has stopped
   # naming it at all is also a failure: this check would otherwise pass by covering nothing.
-  mentioned=$(grep -ohE '127\.0\.0\.1:[0-9]{4,5}|port [0-9]{4,5}' README.md CLAUDE.md \
+  # README.zh-TW.md is in the list because a translation is a second place for the
+  # number to be wrong, and the one nobody rereads.
+  docs_with_port="README.md CLAUDE.md"
+  [ -f README.zh-TW.md ] && docs_with_port="$docs_with_port README.zh-TW.md"
+  # shellcheck disable=SC2086
+  mentioned=$(grep -ohE '127\.0\.0\.1:[0-9]{4,5}|port [0-9]{4,5}' $docs_with_port \
               | grep -oE '[0-9]{4,5}' | sort -u)
   if [ -z "$mentioned" ]; then
-    fail "port: neither README.md nor CLAUDE.md names it any more — this check is covering nothing"
+    fail "port: none of the READMEs or CLAUDE.md names it any more — this check is covering nothing"
   else
     wrong=$(printf '%s\n' "$mentioned" | grep -v "^${port}$")
     if [ -n "$wrong" ]; then

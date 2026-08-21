@@ -1,49 +1,87 @@
+<div align="center">
+
 # CLI Island
 
-把 iPhone 的 Dynamic Island 帶到 Mac 上。利用 MacBook 的瀏海（notch），在兩側即時顯示 AI coding agent 的動態。
+**Your MacBook's notch, telling you what your coding agents are doing.**
 
-> repo 名稱仍是 `cc-island`，app 顯示名稱是 **CLI Island** — 因為它早就不只服務 Claude Code 了。bundle identifier、`.app` 檔名、hook 路徑都維持原樣，升級不會弄丟你的設定。
+Claude Code, GitHub Copilot and OpenAI Codex push what they are doing into the notch — and,
+the part that matters once you have more than one running, **tell you which session is waiting
+for you.**
 
-支援 **Claude Code**、**GitHub Copilot**、**OpenAI Codex** — 一個 hook binary 三家通吃，零外部依賴。
+[![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black.svg)](#install)
+[![Swift 5.9](https://img.shields.io/badge/Swift-5.9-orange.svg)](Sources)
+[![Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](#install)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue)
-![Swift 5.9](https://img.shields.io/badge/Swift-5.9-orange)
-![License: MIT](https://img.shields.io/badge/License-MIT-green)
+English · [繁體中文](README.zh-TW.md)
 
-## Features
+<img src="docs/assets/waiting.png" width="720" alt="The notch, expanded: cc-island on the left ear, the question on the right, and below it a panel listing the options being asked about.">
 
-- **瀏海融合** — 自動偵測螢幕瀏海尺寸，凹弧貼合圓角，無縫銜接
-- **Source 配色** — Claude Code 暖橘 / Copilot 紫 / Codex 綠，左右兩側色條 + 呼吸燈一眼分辨來源
-- **Thinking 脈動** — AI 思考中時瀏海下方呼吸光暈
-- **Action 按鈕** — Claude Code 要你批准 Bash/Edit 時，直接在瀏海上 Allow/Deny，不用跳回 terminal；展開預覽顯示真實 diff
-- **Reminder 提醒** — Claude 問問題時把實際問題秀在右耳，不只是 "Your turn"
-- **Progress 即時更新** — 長任務串流進度到瀏海，同 title POST 就會就地更新、不會重新動畫；附 `swift build` wrapper
-- **多 session 色標** — 同時跑多個 session，依 project 名稱自動配色區分；subagent 顯示為 `↳ agent_type`
-- **三家 AI 整合** — Claude Code / GitHub Copilot / OpenAI Codex hooks，自動偵測來源
-- **Menu bar icon** — 從選單列直接 Quit / Reinstall Claude Code Hooks / 切換開機自動啟動，不用 `pkill`
-- **開機自動啟動** — Settings → General → Startup 打開後，登入 macOS 就在背景待命，不用記得手動開
-- **HTTP API** — `POST http://127.0.0.1:9423/event`，任何工具都能整合
-- **自動適配** — 有瀏海用耳朵模式，沒瀏海用膠囊模式
-- **多螢幕跟隨游標** — 游標切到另一個螢幕停留 200ms，Island 會淡出淡入搬過去；`/event` 進來時也會立刻跳到游標所在螢幕。每個螢幕重新判斷 notch / 膠囊排版
+</div>
 
 ---
 
-## Installation
+## What it is for
 
-### Option A: Download Release（推薦）
+An agent that has stopped to ask you something costs you every second nobody notices. Measured
+across the transcripts on one machine, 58 of those questions were answered at a **median of 71
+seconds** and a **maximum of 10.9 hours**. Ten hours is not deliberation. It is nobody knowing
+they were being asked.
 
-1. 到 [Releases](https://github.com/bistin/cc-island/releases) 下載最新的 `DynamicIsland.zip`
-2. 解壓縮，把 `DynamicIsland.app` 拖到 `/Applications/`
-3. 打開 app：
-   ```bash
-   open /Applications/DynamicIsland.app
-   ```
+The rest is the same idea with less at stake: what a session is doing right now, which of your
+four is the one that finished, and whether the thing it wants is a permission or an answer.
 
-> App 不會出現在 Dock，但會在 menu bar 顯示一個小 island icon — 點開可以 Quit / Reinstall Hooks。
+**It installs one small binary into your agent's hook directory and nothing else** — no daemon
+you did not start, no account, no network beyond `127.0.0.1`.
 
-### Option B: From Source
+## What it does
 
-需要 Xcode Command Line Tools（`xcode-select --install`）：
+### Says when a session is waiting for you
+
+<img src="docs/assets/waiting.png" width="640" alt="The expanded panel showing a question and its options.">
+
+`AskUserQuestion` and `ExitPlanMode` are the tools whose *execution is a person answering*. The
+island shows the question and its options, pulses, and **does not dismiss itself** — a marker
+that disappears on a timer is worse than none, because the thing it reported has not stopped
+being true. Clicking it focuses that session's terminal pane, through tmux where you use it.
+
+It also survives your other sessions: while somebody is being asked, a `Bash` running in another
+project cannot bury the question.
+
+### Answers a permission without leaving your editor
+
+<img src="docs/assets/permission.png" width="640" alt="The expanded panel showing a coloured diff above Allow and Deny buttons and a jump-to-terminal row.">
+
+When Claude Code wants to run `Bash` or edit a file, the island shows the actual diff and takes
+Allow/Deny right there. The hook long-polls for up to five minutes, so you can walk away and
+still come back to live buttons; if you never answer, it steps aside and Claude Code prompts you
+the way it always would.
+
+### And everything else, briefly
+
+| Event | Left ear | Right ear |
+|---|---|---|
+| You send a prompt | | thinking glow |
+| Read / Grep / Glob | Reading, Searching | file or pattern |
+| Edit / Write | Editing | filename, with a diff when expanded |
+| Bash | Terminal | the command |
+| Subagent activity | `↳ agent_type` | what it is doing |
+| A long task | its title | `N/M` and a ring, updated in place |
+| Finished | Done | |
+
+Sessions are coloured by source — Claude orange, Copilot purple, Codex green — and by project
+name when several of the same source are running. Displays without a notch get a capsule instead,
+and the island follows your cursor between screens.
+
+## Install
+
+### From a release
+
+Download `DynamicIsland.zip` from [Releases](https://github.com/bistin/cc-island/releases), unzip,
+and drag it to `/Applications`. It is ad-hoc signed, so the first launch needs
+**right-click → Open**.
+
+### From source
 
 ```bash
 git clone https://github.com/bistin/cc-island.git
@@ -60,165 +98,98 @@ swift scripts/render-app-icon.swift build/AppIcon.iconset
 iconutil -c icns build/AppIcon.iconset -o AppIcon.icns
 
 # Assemble .app bundle
-mkdir -p build/DynamicIsland.app/Contents/{MacOS,Resources}
-cp .build/release/DynamicIsland build/DynamicIsland.app/Contents/MacOS/
-cp .build/release/island-hook   build/DynamicIsland.app/Contents/Resources/
-chmod +x build/DynamicIsland.app/Contents/Resources/island-hook
-cp AppIcon.icns build/DynamicIsland.app/Contents/Resources/
-cp Info.plist build/DynamicIsland.app/Contents/
-codesign --force --deep --sign - build/DynamicIsland.app
-cp -R build/DynamicIsland.app /Applications/
+mkdir -p DynamicIsland.app/Contents/{MacOS,Resources}
+cp .build/release/DynamicIsland DynamicIsland.app/Contents/MacOS/
+cp .build/release/island-hook   DynamicIsland.app/Contents/Resources/
+cp AppIcon.icns DynamicIsland.app/Contents/Resources/
+cp Info.plist DynamicIsland.app/Contents/
+codesign --force --deep --sign - DynamicIsland.app
 
 # Launch
-open /Applications/DynamicIsland.app
+open DynamicIsland.app
 ```
 
-### Prerequisites
+Requires macOS 13 or later and Swift 5.9. There are no third-party dependencies: Foundation,
+AppKit, SwiftUI and Network, and nothing else.
 
-- macOS 13.0+
+## Hooks
 
-> 從 v1.5.0 起 hook 改成 Swift binary，**不再需要 `jq`**。
+### Claude Code
 
----
-
-## Setup Hooks
-
-### Claude Code（推薦：自動安裝）
-
-第一次啟動 app 時會跳出對話框問你要不要設定 Claude Code hooks。按 **Install** 就好，會自動：
-
-- 把 `island-hook` binary 部署到 `~/.claude/hooks/dynamic-island-hook`
-- 在 `~/.claude/settings.json` 註冊所有 hook 事件
-- 保留你其他工具的 hook（例如 gemini-bridge）不會被動到
-
-之後升級重新打開 app，hooks 會自動同步到最新版（idempotent，沒變動就不寫）。
-
-也可以從 terminal 手動執行：
+The first launch offers to set them up. **Install** deploys the hook binary to
+`~/.claude/hooks/dynamic-island-hook` and registers the events in `~/.claude/settings.json`,
+leaving any other tool's hooks alone. Later launches re-sync silently when the app has been
+upgraded, and write nothing when it has not.
 
 ```bash
-DynamicIsland --install-hooks       # 安裝 / 升級
-DynamicIsland --uninstall-hooks     # 移除
+DynamicIsland --install-hooks     # install or upgrade
+DynamicIsland --uninstall-hooks   # remove
 ```
 
-> 註冊的事件涵蓋 PreToolUse / PostToolUse / PostToolUseFailure / PermissionRequest / PermissionDenied / Notification / Stop / StopFailure / SubagentStart / SubagentStop / UserPromptSubmit / SessionStart / SessionEnd / PreCompact / PostCompact。`PermissionRequest` matcher 限制在危險工具（`Bash|Edit|Write|MultiEdit|NotebookEdit`），唯讀工具不會跳 Allow/Deny。
+Registered events cover the session lifecycle, tool use, permissions and compaction.
+`PermissionRequest` is deliberately limited to the tools that can change something —
+`Bash|Edit|Write|MultiEdit|NotebookEdit` — so a subagent reading files does not fill your notch
+with Allow/Deny.
 
 ### GitHub Copilot CLI
 
-Copilot hooks 是 **per-repo** 的（寫進 `.github/hooks/hooks.json`），所以每個專案各自安裝：
+Copilot's hooks are per-repository, so install them in each one:
 
 ```bash
 cd /path/to/your/repo
-DynamicIsland --install-copilot-hooks    # 預設使用 cwd
-# 或明確指定路徑
-DynamicIsland --install-copilot-hooks /path/to/repo
+DynamicIsland --install-copilot-hooks           # defaults to the current directory
+DynamicIsland --uninstall-copilot-hooks [path]
 ```
 
-會在 `{repoPath}/.github/hooks/hooks.json` 寫入 Copilot 的 hook 設定（camelCase 事件、`version: 1`、`bash`/`timeoutSec` 欄位），並把 binary 部署到全域的 `~/.copilot/hooks/dynamic-island-hook`。
-
-移除：
-
-```bash
-DynamicIsland --uninstall-copilot-hooks /path/to/repo
-```
-
-> ⚠️ `.github/hooks/hooks.json` 預設會被 git 追蹤。如果不想 commit 給隊友，加進 `.gitignore`。
+That writes `{repo}/.github/hooks/hooks.json` and deploys the binary to
+`~/.copilot/hooks/dynamic-island-hook`. **The JSON is tracked by git by default** — add it to
+`.gitignore` if you would rather not commit it for your team.
 
 ### OpenAI Codex
 
-Codex hooks 也是全域安裝。現在可以直接用 CLI：
-
 ```bash
 DynamicIsland --install-codex-hooks
-```
-
-它會自動：
-
-- 把 `island-hook` binary 部署到 `~/.codex/hooks/dynamic-island-hook`
-- 在 `~/.codex/hooks.json` 註冊 Codex 支援的事件
-- Hooks 預設已啟用；若 `~/.codex/config.toml` 還有 deprecated 的 `codex_hooks`，會遷移成 canonical 的 `hooks`
-
-安裝或更新 hook definition 後，在 Codex 輸入 `/hooks`，review 並 trust Dynamic Island hooks。Codex 會依 definition hash 管理信任，內容變更後需要重新確認。
-
-移除：
-
-```bash
 DynamicIsland --uninstall-codex-hooks
 ```
 
-產生的 `~/.codex/hooks.json` 會是官方 Codex hooks 文件格式，並透過 `ISLAND_SOURCE=codex` 讓 island 使用綠色配色。註冊事件如下：
+Deploys to `~/.codex/hooks/dynamic-island-hook` and writes `~/.codex/hooks.json`, migrating the
+deprecated `codex_hooks` key in `config.toml` if it is still there. Afterwards run `/hooks` in
+Codex to review and trust them — Codex keys trust on a hash of the definition, so it asks again
+whenever the content changes.
 
-- `SessionStart`（matcher: `startup|resume|clear|compact`）
-- `PreToolUse`（matcher: `Bash|apply_patch`）
-- `PermissionRequest`（matcher: `Bash|apply_patch`）
-- `PostToolUse`（matcher: `Bash|apply_patch`）
-- `PreCompact` / `PostCompact`
-- `SubagentStart` / `SubagentStop`
-- `UserPromptSubmit`
-- `Stop`
-- `SessionEnd`
+The registration focuses on shell, file changes and lifecycle rather than every MCP call, so the
+notch stays useful.
 
-> 預設聚焦 shell、檔案修改與生命週期事件，避免把所有 MCP/local tool activity 都推到瀏海造成干擾。Codex 目前也支援以 tool name matcher 監聽其他 local 與 MCP tools。
-
----
-
-## Verify It Works
-
-設定好之後，測試一下：
+## Check it works
 
 ```bash
-# 確認 app 在跑
-curl -s http://127.0.0.1:9423/event \
+curl -s -X POST http://127.0.0.1:9423/event \
+  -H "Content-Type: application/json" \
   -d '{"title":"Hello","subtitle":"It works!","style":"success","duration":3}'
 ```
 
-瀏海兩側應該會滑出 "Hello" / "It works!"。
+Both ears should slide out. Settings → Diagnostics has the same thing as buttons, along with a
+permission-flow test and the state of every hook install.
 
-之後正常使用 Claude Code / Copilot / Codex，瀏海就會即時顯示 AI 正在做什麼。
+## Open at login
 
----
-
-## 開機自動啟動
-
-Settings → General → Startup 打開 **Open Dynamic Island at login**，或直接從 menu bar icon 點 **Open at Login**。用的是 macOS 13+ 的 `SMAppService`，登入項目由系統代管，你隨時可以在「系統設定 → 一般 → 登入項目」關掉。
-
-想從終端機確認目前狀態：
+Settings → General → Startup, or **Open at Login** in the menu bar. It uses `SMAppService`, so
+macOS owns the switch and you can revoke it in System Settings → General → Login Items.
 
 ```bash
 /Applications/DynamicIsland.app/Contents/MacOS/DynamicIsland --login-item-status
 ```
 
-- `enabled` — 登入時會自動啟動
-- `notFound` / `notRegistered` — 還沒開啟（全新安裝回報 `notFound` 是正常的）
-- `requiresApproval` — 已註冊但你在系統設定裡關掉了，只能回系統設定開，app 內的開關蓋不過去
-- `unavailable` — 你在跑 `swift build` 出來的裸 binary，沒有 `.app` bundle 就沒有登入項目
+`enabled`, `notFound` (the ordinary state before you turn it on), `requiresApproval` (registered,
+but switched off in System Settings — only System Settings can undo that), or `unavailable` (you
+are running a bare `swift build` binary, which has no bundle to register).
 
-> 這個指令是唯讀的。註冊動作只從 UI 觸發，避免手滑一行指令就多一個登入項目。
-
----
-
-## What It Shows
-
-| Event | Left Ear | Right Ear | Style |
-|-------|----------|-----------|-------|
-| User sends prompt | | Thinking glow | pulse |
-| Read | Reading | filename | claude |
-| Grep / Glob | Searching | pattern | claude |
-| Edit | Editing | filename | claude |
-| File saved | Saved | filename | success |
-| Bash | Terminal | command | claude |
-| Agent spawned | Agent | description | claude |
-| Subagent activity | `↳ agent_type` label | tool details | claude |
-| Permission needed (Bash/Edit/Write) | Permission | tool: detail + Allow/Deny buttons + diff preview | action |
-| Claude asks a question | Waiting | the actual question text (full text in expanded view) | reminder |
-| Notification (non-permission) | Claude Code | message | reminder |
-| Long task with progress | title | `N/M` + ring (updates in place) | claude |
-| Done | Done | | success |
-
----
+The command is read-only on purpose: registering a login item should take a deliberate click, not
+a stray line in a script.
 
 ## HTTP API
 
-任何工具都能透過 HTTP 發送事件：
+Anything that can POST can use the island.
 
 ```bash
 curl -X POST http://127.0.0.1:9423/event \
@@ -232,72 +203,48 @@ curl -X POST http://127.0.0.1:9423/event \
 | `subtitle` | string | `""` | Right ear text |
 | `style` | string | `"claude"` | `info` / `success` / `warning` / `error` / `claude` / `action` / `reminder` |
 | `duration` | number | `4.0` | Display seconds |
-| `detail` | string | `null` | Expanded view content |
+| `detail` | string | `null` | Expanded view content; `+ ` / `- ` lines render as a coloured diff |
 | `progress` | number | `null` | 0.0–1.0 progress bar / ring |
-| `persistent` | bool | `false` | Don't auto-dismiss (`true` for `action` / `reminder`, or when `progress < 1.0`) |
-| `type` | string | `"custom"` | `thinking_start` / `thinking_stop` for glow control |
+| `persistent` | bool | `false` | Don't auto-dismiss (`true` for `action` / `reminder`) |
+| `tty` | string | `null` | `/dev/ttysNNN`, so a click can focus that terminal tab |
 
-### Progress updates
+POSTing the same `title` with a new `progress` updates in place rather than re-animating, which is
+how a long task streams without flickering.
 
-POST with the same `title` and `progress` swaps the progress in place without re-animating — use it to stream updates for a single long-running task. When `progress` reaches `1.0`, the event shows briefly then auto-dismisses.
+## When something is wrong
 
-```bash
-for i in 0 25 50 75 100; do
-  curl -s -X POST http://127.0.0.1:9423/event \
-    -d "{\"title\":\"Upload\",\"subtitle\":\"$i/100\",\"progress\":$(awk "BEGIN{print $i/100}")}"
-  sleep 0.5
-done
-```
-
-`scripts/island-progress.sh` wraps this — pipe any command that prints `[N/M]` lines through it (e.g. `swift build 2>&1 | scripts/island-progress.sh Build`).
-
----
-
-## Common Commands
-
-最常用的 Quit / Reinstall Claude Code Hooks 直接從 menu bar icon 點。CLI 操作：
+`~/Library/Logs/CLI Island.log` records what the app could not tell you otherwise: whether the
+listener bound, whether the hooks were rewritten or already current, and which route a click took.
+It holds routes and outcomes only — never what a session asked or what a file contained.
 
 ```bash
-# Launch
-open /Applications/DynamicIsland.app
+tail -f ~/Library/Logs/"CLI Island.log"
 
-# Restart
-pkill DynamicIsland; open /Applications/DynamicIsland.app
+# Why did clicking jump to the wrong tab?
+DynamicIsland --reveal-tty /dev/ttys004 [--tmux-socket /path/to/socket]
 
-# Quit (or use menu bar icon)
-pkill DynamicIsland
-
-# Hook management (auto-prompt also runs on first launch)
-DynamicIsland --install-hooks                    # Claude Code
-DynamicIsland --install-copilot-hooks [path]     # Copilot, defaults to cwd
-DynamicIsland --install-codex-hooks              # Codex
-DynamicIsland --uninstall-hooks
-DynamicIsland --uninstall-copilot-hooks [path]
-DynamicIsland --uninstall-codex-hooks
-DynamicIsland --help
+# What does this build assume about Claude Code, tmux and macOS?
+DynamicIsland --compat-table
 ```
 
----
+[`docs/compatibility.md`](docs/compatibility.md) is that last one as a page. **Almost nothing this
+app reads is an API** — a transcript layout, a hook firing order, tmux format strings — and every
+one of those changing looks like this app being broken. The page lists what each would look like
+from the outside.
 
-## Roadmap / Backlog
+## Common commands
 
-剩餘待辦，分三組。Done 的條目進 CHANGELOG，這裡只留 forward-looking 的 backlog。
-
-### Reliability / Bugs
-
-1. Harden local `/event` and `/response` API — 加 per-launch token 給 hooks 帶 header/env，並移除或限制 `Access-Control-Allow-Origin: *`。
-
-### Refactor
-
-2. Split `IslandView.swift` into smaller view files — 先拆 `NotchView` / `CapsuleView` / `DetailViews` / `ActionControls`，並把非 rendering logic 移出 view，對齊 view testability 的方向。
-3. Extract testable event/state logic — `LocalServer` 專心做 HTTP framing/router，JSON → `IslandEvent` 轉換搬到 decoder；view 互動/queue 判斷則往 state manager 或 pure helper 收斂，方便 unit test。
-
-### Features
-
-4. Diagnostics menu/pane — 顯示 server port、hooks 是否 installed/current、deployed hook hash、最近 events。
-5. Built-in self-test actions — Settings 加 `Send Test Event` / `Test Permission Flow` / `Test Codex Hook` 之類按鈕。
+```bash
+open /Applications/DynamicIsland.app                 # launch
+pkill DynamicIsland; open /Applications/DynamicIsland.app   # restart
+pkill DynamicIsland                                  # quit (or use the menu bar)
+DynamicIsland --help                                 # every flag
+```
 
 ## Architecture
+
+Two pure-logic libraries with no AppKit in them, an app that draws, and a hook binary small enough
+to run on every tool call.
 
 ```
 Sources/
@@ -352,14 +299,29 @@ Sources/
 │   └── ScreenResolver.swift            # point-in-rect screen lookup
 └── island-hook/                    # Tiny CLI binary deployed into each tool's hook dir
     └── main.swift                      # I/O shell — reads stdin, dispatches via core, POSTs
+
 Tests/
 ├── IslandHookCoreTests/            # 168 tests — payload building, plan parsing, stop replies
 └── DynamicIslandCoreTests/         # 222 tests — HTTP framing, event decoding, login-item state
-
-hooks/
-└── claude-settings-example.json    # Reference config for manual setup
 ```
+
+Three scripts fail CI when the documentation and the code disagree, and each is mutation-tested
+rather than assumed to work: `check-claimed-numbers.sh` (numbers quoted in prose),
+`check-compatibility-doc.sh` (the page above, and that every file it names exists), and
+`check-source-tree.sh` (this tree, in both directions).
+
+[`CLAUDE.md`](CLAUDE.md) is the long form: why the notch is drawn the way it is, why a session
+under tmux has two ttys, and what was measured rather than assumed.
+
+## Backlog
+
+- Harden the local `/event` and `/response` API — a per-launch token carried by the hooks, and
+  removing the permissive `Access-Control-Allow-Origin`.
+- Answering a question *on* the island rather than jumping to the terminal. The long-poll
+  machinery already exists; what stops it is that `PreToolUse` can only allow or deny, so a choice
+  would reach Claude as "blocked, and here is why" rather than as an answer.
+- Split `IslandView.swift` further and keep moving non-rendering logic into the pure libraries.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
