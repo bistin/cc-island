@@ -152,16 +152,25 @@ runs off the main thread for the same reason; only the AppleScript half needs a 
 
 Two limits worth knowing before debugging a report that it did nothing:
 
-- **Only the default socket.** A server started with `tmux -L name` or `-S path` is invisible
-  here. The hook runs inside the pane and could forward `$TMUX`, which is where a fix would start.
 - **Which app comes forward is still a guess** when the terminal has no AppleScript tab model.
   tmux puts the right pane in front inside its own window, but with both Terminal.app and Ghostty
   running, the fallback picks by `knownTerminalBundleIDs` order rather than by which one is
   actually drawing that client.
 
+**Non-default servers are addressed too, and only the hook can make that possible.** `tmux` with no
+`-S` finds `/tmp/tmux-<uid>/default` and nothing else, so a server started with `tmux -L work` was
+invisible — the pane was simply never found, with no indication why. The hook is the one part of
+this that runs *inside* the pane, so it is the only part that can see `TMUX`, which tmux sets there
+to `<socket-path>,<server-pid>,<session-index>`. `IslandHookCore.tmuxSocketPath` takes the first
+field, the payload carries it as `tmux_socket`, and `TmuxBridge` prepends `-S`. The app validates it
+with the same parser the hook used — an absolute path, nothing else; it reaches `Process` as argv
+with no shell, so that is a shape check rather than a quoting one.
+
 Verified end to end against a live server: with focus parked on a second window,
 `TmuxBridge.reveal` on the first window's pane tty returned the client tty and moved
-`window_active` from the second window to the first.
+`window_active` from the second window to the first. Repeated on a named socket, as an A/B in one
+run: without the socket the same call answered `not a pane`; with it, the pane was selected and
+`window_active` moved. `--reveal-tty <tty> --tmux-socket <path>` is how that was measured.
 
 `--reveal-tty <tty>` runs the same two routes synchronously and says which one answered — it
 exists because the click path otherwise had no way to be exercised without a person clicking, and

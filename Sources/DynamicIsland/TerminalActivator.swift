@@ -59,11 +59,11 @@ enum TerminalActivator {
     /// Callers must precheck `hasRunningTerminal()` — when no terminal is
     /// running we do nothing here, leaving the UI decision (expand vs
     /// dismiss) to the caller.
-    static func activate(tty: String) {
+    static func activate(tty: String, tmuxSocket: String? = nil) {
         DispatchQueue.global(qos: .userInitiated).async {
             // nil means "not a tmux pane", which is the ordinary case; carry
             // on with the tty we were given rather than giving up.
-            let emulatorTTY = TmuxBridge.reveal(tty: tty) ?? tty
+            let emulatorTTY = TmuxBridge.reveal(tty: tty, socket: tmuxSocket) ?? tty
             DispatchQueue.main.async { activateFrontmost(tty: emulatorTTY) }
         }
     }
@@ -77,8 +77,8 @@ enum TerminalActivator {
     /// reports which one answered.
     ///
     /// Returns a line describing what happened, for a person reading it in a terminal.
-    static func revealSynchronously(tty: String) -> String {
-        let tmuxTTY = TmuxBridge.reveal(tty: tty)
+    static func revealSynchronously(tty: String, tmuxSocket: String? = nil) -> String {
+        let tmuxTTY = TmuxBridge.reveal(tty: tty, socket: tmuxSocket)
         let effective = tmuxTTY ?? tty
         var notes = tmuxTTY.map { "tmux: pane selected, emulator knows it as \($0)" }
             ?? "tmux: not a pane (no server, non-default socket, or not under tmux)"

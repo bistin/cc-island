@@ -47,6 +47,10 @@ public struct HookPlan {
     /// other correlation. Nil when the parent isn't attached to a TTY
     /// (GUI launch, self-test) — callers fall back to no-op activate.
     public let tty: String?
+    /// The tmux socket this session's pane lives on, from `TMUX` inside the pane. Forwarded so the
+    /// app can address a server started with `tmux -L name` / `-S path`, which it otherwise cannot
+    /// see at all. Nil outside tmux.
+    public let tmuxSocket: String?
 
     public init(
         payload: [String: Any], source: String, event: String, tool: String,
@@ -58,7 +62,8 @@ public struct HookPlan {
         inlineReplyEnabled: Bool = false,
         stopReplyTimeoutSeconds: TimeInterval = StopReplyTimeoutSeconds,
         permissionTimeoutSeconds: TimeInterval = PermissionTimeoutSeconds,
-        tty: String? = nil
+        tty: String? = nil,
+        tmuxSocket: String? = nil
     ) {
         self.payload = payload
         self.source = source
@@ -77,6 +82,7 @@ public struct HookPlan {
         self.stopReplyTimeoutSeconds = stopReplyTimeoutSeconds
         self.permissionTimeoutSeconds = permissionTimeoutSeconds
         self.tty = tty
+        self.tmuxSocket = tmuxSocket
     }
 }
 
@@ -88,7 +94,8 @@ public struct HookPlan {
 public func parseHookPlan(
     payload: [String: Any],
     env: [String: String] = [:],
-    tty: String? = nil
+    tty: String? = nil,
+    tmuxSocket: String? = nil
 ) -> HookPlan? {
     // SOURCE drives the project color:
     //   claude  → warm orange    copilot → GitHub violet    codex → OpenAI green
@@ -198,7 +205,8 @@ public func parseHookPlan(
         inlineReplyEnabled: env["CC_ISLAND_INLINE_REPLY"] == "1",
         stopReplyTimeoutSeconds: stopReplyTimeoutSeconds,
         permissionTimeoutSeconds: permissionTimeoutSeconds,
-        tty: tty
+        tty: tty,
+        tmuxSocket: tmuxSocket
     )
 }
 
@@ -228,6 +236,12 @@ extension HookPlan {
         // tolerates a missing field.
         if let tty = tty, !tty.isEmpty {
             p["tty"] = tty
+        }
+        // Which tmux server the pane is on. Only the hook can know: it is the
+        // one part of this that runs inside the pane. Without it the app sees
+        // the default socket and nothing else.
+        if let socket = tmuxSocket, !socket.isEmpty {
+            p["tmux_socket"] = socket
         }
         return p
     }

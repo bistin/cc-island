@@ -31,7 +31,10 @@ guard !inputData.isEmpty,
       let plan = parseHookPlan(
         payload: payload,
         env: ProcessInfo.processInfo.environment,
-        tty: detectedTTY
+        tty: detectedTTY,
+        // Only this process can see it: the hook runs inside the pane, the app
+        // does not. Without it a server started with `tmux -L name` is invisible.
+        tmuxSocket: tmuxSocketPath(fromTMUXEnv: ProcessInfo.processInfo.environment["TMUX"])
       )
 else { exit(0) }
 
