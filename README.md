@@ -52,7 +52,7 @@ cd cc-island
 # Build (produces both DynamicIsland app and the hook binary)
 swift build -c release
 
-# Run unit tests (375 tests: hook payload formatting, HTTP parser, screen resolver, and more)
+# Run unit tests (384 tests: hook payload formatting, HTTP parser, screen resolver, and more)
 swift test
 
 # Render the app icon (AppKit only — no design tool needed)
@@ -318,6 +318,7 @@ Sources/
 │   ├── SettingsView.swift              # Settings window contents
 │   ├── SettingsWindowController.swift  # retained window, isReleasedWhenClosed = false
 │   ├── SelfTest.swift                  # Diagnostics → send a test event / permission flow
+│   ├── Log.swift                       # ~/Library/Logs/CLI Island.log — routes and outcomes only
 │   └── Views/
 │       ├── Ears.swift                      # the two halves that flank the notch
 │       ├── Capsule.swift                   # the pill drawn on displays with no notch
@@ -347,12 +348,13 @@ Sources/
 │   ├── AtomicFileWriter.swift          # write-then-rename, with a backup, for settings.json
 │   ├── HookCommandParse.swift          # recognising our own entries in someone else's config
 │   ├── HexColor.swift                  # #rrggbb → RGB for the configurable source colours
+│   ├── LogLine.swift                   # log line format and the trim that stops it growing
 │   └── ScreenResolver.swift            # point-in-rect screen lookup
 └── island-hook/                    # Tiny CLI binary deployed into each tool's hook dir
     └── main.swift                      # I/O shell — reads stdin, dispatches via core, POSTs
 Tests/
 ├── IslandHookCoreTests/            # 168 tests — payload building, plan parsing, stop replies
-└── DynamicIslandCoreTests/         # 207 tests — HTTP framing, event decoding, login-item state
+└── DynamicIslandCoreTests/         # 216 tests — HTTP framing, event decoding, login-item state
 
 hooks/
 └── claude-settings-example.json    # Reference config for manual setup

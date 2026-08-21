@@ -89,9 +89,13 @@ class LocalServer {
         listener?.stateUpdateHandler = { state in
             switch state {
             case .ready:
-                print("[DynamicIsland] Server listening on port \(self.port)")
+                Log.write("server: listening on 127.0.0.1:\(self.port)")
             case .failed(let error):
-                print("[DynamicIsland] Server failed: \(error)")
+                // The case this file exists for. Without it the app is running,
+                // nothing is listening, and the only symptom is that events
+                // quietly stop arriving.
+                Log.write("server: FAILED to bind 127.0.0.1:\(self.port) — \(error). "
+                          + "Another copy still running, or the port is taken.")
             default:
                 break
             }
