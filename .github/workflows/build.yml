@@ -38,6 +38,14 @@ jobs:
       - name: Check the compatibility page matches the code
         run: ./scripts/check-compatibility-doc.sh
 
+      # The README's Sources/ tree is what somebody reads to find their way
+      # around before they know any of the names. A file missing from it is a
+      # whole area of the app a newcomer never learns exists; a file renamed
+      # away sends them looking for something that is not there. It listed 19
+      # of 44 when this was added, not by decision but by nobody going back.
+      - name: Check the README tree matches the files
+        run: ./scripts/check-source-tree.sh
+
       - name: Build release
         run: swift build -c release
 

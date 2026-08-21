@@ -343,6 +343,18 @@ file — or the plain word "assumed", which means it has been true for as long a
 nobody went back to find where it started. Inventing a version number would make the column mean
 "probably", so the tests enforce that it is one or the other.
 
+## The README's source tree
+
+`scripts/check-source-tree.sh` fails CI when the `Sources/` tree in the README and the files on
+disk disagree, in either direction. That tree is what somebody reads to find their way around
+before they know the name of anything, which makes being wrong about it expensive in a way most
+stale docs are not: a file missing from it is a whole area of the app a newcomer never learns
+exists, and a file renamed away sends them looking for something that is not there.
+
+It listed **19 of 44 files** when the check was added — not by decision, just by nobody going
+back. The tree is complete now, and complete is the point: "the important ones" is a rule no
+script can check, while "all of them" is one it can.
+
 ## Conventions
 
 - Pure Swift, no external dependencies — only Foundation, AppKit, SwiftUI, Network frameworks
