@@ -318,6 +318,31 @@ Two rules make it worth having rather than decorative:
 Verified by mutation, not by reading: a wrong number, a reworded sentence, docs that stop naming
 the port, and an undocumented new test target each turn it red.
 
+## What this depends on
+
+`DynamicIslandCore.Compat.dependencies` lists the things this app reads that nobody promised would
+stay the same: Claude Code's hook payload shape and firing order, its transcript layout and the
+`turn_duration` marker, the names of the tools that ask a person, `ps -o tty=` output, tmux's
+format strings and `TMUX`, `SMAppService` status semantics, the notch rectangles macOS reports.
+Almost none of it is an API.
+
+**The symptom column is the point.** Every one of these failures is quiet, and every one of them
+looks like a bug in this app rather than a change underneath it — an island that never lights up, a
+click that goes nowhere, a toggle that lies. Somebody debugging one of those should be able to read
+the page and recognise what they are seeing.
+
+`docs/compatibility.md` is **generated** by `DynamicIsland --compat-table`, and
+`scripts/check-compatibility-doc.sh` fails CI when the page and the table have drifted. A page like
+that maintained by hand is wrong by the second release: somebody adds a dependency in code, nobody
+remembers the page, and it quietly starts describing an older build while looking authoritative.
+The check also verifies every file the table names still exists, so a rename cannot leave the page
+pointing at nothing. Regenerate with `scripts/check-compatibility-doc.sh --write`.
+
+`confirmed` is either a measurement somebody wrote down — the measurements themselves are in this
+file — or the plain word "assumed", which means it has been true for as long as anyone looked and
+nobody went back to find where it started. Inventing a version number would make the column mean
+"probably", so the tests enforce that it is one or the other.
+
 ## Conventions
 
 - Pure Swift, no external dependencies — only Foundation, AppKit, SwiftUI, Network frameworks

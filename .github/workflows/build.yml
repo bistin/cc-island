@@ -30,6 +30,14 @@ jobs:
       - name: Check the numbers the docs claim
         run: ./scripts/check-claimed-numbers.sh
 
+      # docs/compatibility.md lists what this app assumes about Claude Code, tmux
+      # and macOS — none of which is an API. A page like that maintained by hand
+      # is wrong by the second release, so it is generated from the table in
+      # Compat.swift and this fails when the two have drifted, or when the table
+      # names a file that has since been renamed away.
+      - name: Check the compatibility page matches the code
+        run: ./scripts/check-compatibility-doc.sh
+
       - name: Build release
         run: swift build -c release
 
