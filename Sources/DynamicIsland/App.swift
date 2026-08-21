@@ -26,6 +26,7 @@ struct DynamicIslandApp {
             runRevealCLI(tty: tty, socket: flagValue(in: args, after: "--tmux-socket"))
             exit(0)
         }
+        if args.contains("--compat-table") { print(Compat.markdown(), terminator: ""); exit(0) }
         if args.contains("--help") || args.contains("-h") { printUsage(); exit(0) }
 
         let app = NSApplication.shared
@@ -157,6 +158,9 @@ struct DynamicIslandApp {
                                                For diagnosing "clicking jumps to the wrong tab".
           --tmux-socket <path>                 With --reveal-tty: address a tmux server started with
                                                `tmux -L name` / `-S path` instead of the default one.
+          --compat-table                       Print what this build assumes about Claude Code, tmux
+                                               and macOS, and what breaks when each changes.
+                                               Generates docs/compatibility.md.
           --help, -h                           Show this help.
         """)
     }
