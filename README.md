@@ -315,8 +315,9 @@ under tmux has two ttys, and what was measured rather than assumed.
 
 ## Backlog
 
-- Harden the local `/event` and `/response` API — a per-launch token carried by the hooks, and
-  removing the permissive `Access-Control-Allow-Origin`.
+- A per-launch token carried by the hooks, so `/event` distinguishes them from anything else
+  running as you. The other half of this — the permissive `Access-Control-Allow-Origin`, and a
+  listener that was quietly accepting from the whole network — is done.
 - Answering a question *on* the island rather than jumping to the terminal. The long-poll
   machinery already exists; what stops it is that `PreToolUse` can only allow or deny, so a choice
   would reach Claude as "blocked, and here is why" rather than as an answer.
