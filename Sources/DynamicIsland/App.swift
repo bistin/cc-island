@@ -22,7 +22,10 @@ struct DynamicIslandApp {
             runUninstallCLI(target: .codex); exit(0)
         }
         if args.contains("--login-item-status") { printLoginItemStatus(); exit(0) }
-        if let tty = flagValue(in: args, after: "--reveal-tty") { runRevealCLI(tty: tty); exit(0) }
+        if let tty = flagValue(in: args, after: "--reveal-tty") {
+            runRevealCLI(tty: tty, socket: flagValue(in: args, after: "--tmux-socket"))
+            exit(0)
+        }
         if args.contains("--help") || args.contains("-h") { printUsage(); exit(0) }
 
         let app = NSApplication.shared
@@ -37,14 +40,21 @@ struct DynamicIslandApp {
     /// Deliberately an action rather than a status, unlike `--login-item-status`: what it does is
     /// exactly what the user was going to do by clicking, and the point is to be able to check it
     /// without one.
-    private static func runRevealCLI(tty: String) {
+    private static func runRevealCLI(tty: String, socket: String? = nil) {
         guard let decoded = decodeTTY(from: tty) else {
             FileHandle.standardError.write(Data("not a tty this app will accept: \(tty)\n".utf8))
             print("expected /dev/ttys<digits> or /dev/pts/<digits>")
             exit(1)
         }
-        print("reveal \(decoded)")
-        print(TerminalActivator.revealSynchronously(tty: decoded))
+        // Validated with the same parser the hook uses, so the CLI cannot reach
+        // further than a real payload could.
+        let checked = socket.flatMap { tmuxSocketPath(fromTMUXEnv: $0) }
+        if socket != nil, checked == nil {
+            FileHandle.standardError.write(Data("not a socket path: \(socket!)\n".utf8))
+            exit(1)
+        }
+        print("reveal \(decoded)\(checked.map { " on \($0)" } ?? "")")
+        print(TerminalActivator.revealSynchronously(tty: decoded, tmuxSocket: checked))
     }
 
     /// The value after a flag, or nil when the flag is absent or has nothing after it.
@@ -145,6 +155,8 @@ struct DynamicIslandApp {
           --reveal-tty <tty>                   Focus the terminal pane owning that tty, the same way
                                                clicking the island does, and say which route answered.
                                                For diagnosing "clicking jumps to the wrong tab".
+          --tmux-socket <path>                 With --reveal-tty: address a tmux server started with
+                                               `tmux -L name` / `-S path` instead of the default one.
           --help, -h                           Show this help.
         """)
     }

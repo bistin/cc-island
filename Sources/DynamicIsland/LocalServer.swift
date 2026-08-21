@@ -403,6 +403,12 @@ class LocalServer {
         // allow-list before this string ever reaches AppleScript. See
         // EventDecoder.decodeTTY for the shell-injection rationale.
         let ttyValue = decodeTTY(from: json["tty"])
+        // The tmux socket the pane lives on, when the session is under tmux.
+        // Reuses the hook-side parser so the app validates exactly what the
+        // hook was allowed to send: an absolute path, nothing else. It reaches
+        // `Process` as argv with no shell, so this is a shape check rather
+        // than a quoting one.
+        let tmuxSocketValue = tmuxSocketPath(fromTMUXEnv: json["tmux_socket"] as? String)
         let event = IslandEvent(
             id: payloadID ?? UUID(),
             icon: icon,
@@ -419,7 +425,8 @@ class LocalServer {
             replyMode: replyMode,
             agentID: agentIDValue,
             sessionID: sessionIDValue,
-            tty: ttyValue
+            tty: ttyValue,
+            tmuxSocket: tmuxSocketValue
         )
 
         // Route into the session tree: main session when no agent_id, else

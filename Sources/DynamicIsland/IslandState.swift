@@ -61,6 +61,12 @@ struct IslandEvent: Identifiable {
     /// self-test) — the click then falls back to expand/collapse.
     let tty: String?
 
+    /// The tmux socket the session's pane lives on, forwarded by the hook from
+    /// `TMUX` inside that pane. Nil outside tmux — and nil is also what the app
+    /// saw for every non-default server before this existed, which is why one
+    /// started with `tmux -L name` could never be jumped to.
+    let tmuxSocket: String?
+
     /// Color signaling event source. Falls back to a deterministic
     /// project-name hash when the source isn't known, so legacy callers
     /// (e.g. plain HTTP POST without source) still get visual variety.
@@ -113,7 +119,8 @@ struct IslandEvent: Identifiable {
         replyMode: ReplyMode? = nil,
         agentID: String? = nil,
         sessionID: String? = nil,
-        tty: String? = nil
+        tty: String? = nil,
+        tmuxSocket: String? = nil
     ) {
         self.id = id
         self.icon = icon
@@ -131,6 +138,7 @@ struct IslandEvent: Identifiable {
         self.agentID = agentID
         self.sessionID = sessionID
         self.tty = tty
+        self.tmuxSocket = tmuxSocket
     }
 }
 
@@ -510,7 +518,7 @@ class IslandStateManager: ObservableObject {
             hasTTY: !(event.tty ?? "").isEmpty,
             clickToTerminalEnabled: dynamicIslandUserDefaults.bool(forKey: clickToTerminalKey)
         ), let tty = event.tty, TerminalActivator.hasRunningTerminal() else { return false }
-        TerminalActivator.activate(tty: tty)
+        TerminalActivator.activate(tty: tty, tmuxSocket: event.tmuxSocket)
         dismiss()
         return true
     }
