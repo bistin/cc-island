@@ -29,6 +29,28 @@ The app listens on **port 9423** for HTTP POST events.
 
 The panel follows the user's cursor across screens. `ScreenFollower` polls `NSEvent.mouseLocation` every 50 ms with a 200 ms dwell debounce; `IslandPanel.relocate(to:animated:)` fades out (0.15s), re-runs `applyScreenMetrics` for the target screen, `setFrame`s, and fades in (0.20s). Relocation triggers: `/event` POST (instant, via `IslandStateManager.pushEvent → panel?.relocateToCursorScreen`), cursor dwell ≥200 ms on a new screen, or `NSApplication.didChangeScreenParametersNotification`. Per-screen layout switches between notch and capsule (non-notch displays use `fallbackLayout`); mid-event state (permission dialogs, progress) survives the move. `NSScreen+Display` extracts `displayID` / `containing(_:)` so the formula lives in one place. Single-screen setups are unaffected — the dwell loop short-circuits every tick.
 
+## Where the server listens
+
+`LocalServer` names a **required local endpoint** rather than binding and filtering:
+
+```swift
+params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.loopback), port: …)
+```
+
+Without it, `NWParameters.tcp` listens on every interface. It did, for a long time, while every
+comment in that file, the README and this page all said `127.0.0.1`. Measured: `lsof` reported
+`TCP *:9423 (LISTEN)`, and a TCP handshake from this Mac's own LAN address succeeded. A listener
+that accepts from the local network is one coffee shop away from accepting from the coffee shop.
+
+The `application/json` gate on `/event` did **not** cover this. It is a CORS defence: it forces a
+browser through a preflight that then fails, which is worth having and stops a malicious tab.
+`curl` sets whatever header it likes, so it stopped nothing from a machine on the same network.
+Neither did the user's firewall, which is off by default on macOS and is not this app's doing
+either way.
+
+The log line reads the endpoint back out of the listener rather than restating it, because "it
+says 127.0.0.1 in the source" is exactly what was true throughout.
+
 ## HTTP framing
 
 `LocalServer.handleConnection` used to call `connection.receive()` once and assume the bytes were one complete request. That's wrong for any TCP stream: `URLSession` on loopback routinely delivers headers in one chunk and body in the next, so `island-hook` POSTs silently failed with 400 `missing_body` (~80% drop rate measured in practice). Fixed in v1.6: the server now loops `receive()` until the full request is buffered (1 MiB cap; fail-fast 413 on declared oversize). Parsing is extracted into `DynamicIslandCore.HTTPParser` with 15 unit tests. Hardening per RFC 7230: duplicate/conflicting `Content-Length` → 400, `Transfer-Encoding` (no chunked decoder) → 400.

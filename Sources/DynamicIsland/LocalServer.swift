@@ -76,7 +76,23 @@ class LocalServer {
         do {
             let params = NWParameters.tcp
             params.allowLocalEndpointReuse = true
-            listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
+            // **Required local endpoint, not "bind and filter".** Without this,
+            // `NWParameters.tcp` listens on every interface: `lsof` reported
+            // `TCP *:9423` and a TCP handshake to this Mac's LAN address
+            // succeeded, while every comment, the README and CLAUDE.md all said
+            // 127.0.0.1. A listener that accepts from the local network is one
+            // coffee shop away from accepting from the coffee shop, and the
+            // `application/json` gate below only stops browsers — it is a CORS
+            // defence, and `curl` sets whatever header it likes.
+            //
+            // Naming the endpoint means there is no interface on the network for
+            // it to be found on at all, which does not depend on the user having
+            // macOS's application firewall switched on. It is off by default.
+            params.requiredLocalEndpoint = NWEndpoint.hostPort(
+                host: .ipv4(.loopback),
+                port: NWEndpoint.Port(rawValue: port)!
+            )
+            listener = try NWListener(using: params)
         } catch {
             print("[DynamicIsland] Failed to create listener: \(error)")
             return
@@ -89,7 +105,12 @@ class LocalServer {
         listener?.stateUpdateHandler = { state in
             switch state {
             case .ready:
-                Log.write("server: listening on 127.0.0.1:\(self.port)")
+                // The endpoint is logged rather than assumed: "it says 127.0.0.1
+                // in the source" is exactly what was true while it was listening
+                // on every interface.
+                let bound = self.listener?.parameters.requiredLocalEndpoint
+                    .map { "\($0)" } ?? "ALL INTERFACES"
+                Log.write("server: listening on \(bound)")
             case .failed(let error):
                 // The case this file exists for. Without it the app is running,
                 // nothing is listening, and the only symptom is that events

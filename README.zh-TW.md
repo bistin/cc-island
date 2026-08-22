@@ -204,8 +204,9 @@ binary。完整的檔案樹在[英文版](README.md#architecture)。
 
 ## 待辦
 
-- 加固本機的 `/event` 與 `/response` API——每次啟動產生的 token 由 hook 帶上，並移除過寬的
-  `Access-Control-Allow-Origin`。
+- 每次啟動產生的 token 由 hook 帶上，讓 `/event` 分得出 hook 和其他以你身分執行的東西。這條的
+  另一半——過寬的 `Access-Control-Allow-Origin`，以及一個默默接受整個網段連線的 listener——
+  已經做完了。
 - **在島上直接回答問題**，而不是跳去終端機。長輪詢的機制已經有了；卡住的是 `PreToolUse` 只能
   准或擋，所以選擇會以「被擋了，原因是⋯」的形式抵達 Claude，而不是一個答案。
 - 繼續拆 `IslandView.swift`，把非渲染的邏輯往純邏輯 library 收。
