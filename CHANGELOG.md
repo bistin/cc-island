@@ -5,6 +5,64 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-08-22
+
+### Fixed
+- **The local server was listening on every interface, not on loopback.** Every
+  comment in `LocalServer`, the README and `CLAUDE.md` said `127.0.0.1`; the
+  listener was created with a bare `NWParameters.tcp` and a port, which binds
+  all of them. Measured: `lsof` reported `TCP *:9423 (LISTEN)`, and a TCP
+  handshake from this Mac's own LAN address succeeded. Anyone on the same
+  network could reach it and, with the right `Content-Type`, push arbitrary
+  events onto your island — a spoofed notification in the one piece of UI you
+  have been taught to trust. The `application/json` gate never covered this (it
+  is a CORS defence, and `curl` sets whatever header it likes) and neither did
+  the firewall, which is off by default on macOS. It now names a required local
+  endpoint, so there is no interface on the network for it to be found on.
+- **The permission dialog was not showing its diff**, and had not been since the
+  Allow/Deny row was added. The panel's height reserved room for about three
+  lines of detail and nothing else, so the two rows of controls took the space
+  from the detail — which renders in a `ScrollView` with a maximum height and no
+  minimum, and a `ScrollView` squeezed to nothing collapses rather than clipping.
+  The dialog looked deliberate and the diff it exists to show was simply absent.
+  Rows of controls are now counted rather than folded into the base, and the
+  detail has a minimum height: squeezed, it clips, because something that
+  vanishes leaves nothing on screen to say anything is missing.
+- **A tmux server started with `-L` or `-S` was invisible.** Only the default
+  socket was ever addressed, so panes on a named server could not be jumped to.
+  The hook is the one part of this that runs inside the pane, so it now forwards
+  the socket path out of `TMUX`.
+
+### Added
+- **A log file** at `~/Library/Logs/CLI Island.log`. An app with no window and no
+  Dock icon says nothing at all when something goes wrong, and often the
+  diagnosis already existed and was merely unreachable — `LocalServer` has always
+  printed "Server failed" on a bind error, to a stdout nobody will ever read. It
+  records routes and outcomes only: whether the listener bound and where, whether
+  the hooks were rewritten or already current, which route a click took. Never
+  what a session asked or what a file contained.
+- **`docs/compatibility.md`**, listing what this build assumes about Claude Code,
+  tmux and macOS — a transcript layout, a hook firing order, format strings, none
+  of it an API. The symptom column is the point: every one of these failures is
+  quiet, and every one looks like this app being broken rather than something
+  changing underneath it. Generated from `Compat.dependencies` by
+  `--compat-table`, and CI fails when the page and the code disagree.
+- **`--reveal-tty`** runs the same focus routes a click runs and reports which one
+  answered, so "it jumped to the wrong tab" can be diagnosed without shipping
+  somebody a build to try. `--tmux-socket` addresses a named server.
+
+### Changed
+- **The README** now opens with the island rather than thirteen equally-weighted
+  bullet points, and shows the two things worth seeing work: a session saying it
+  is waiting, and a permission answered without leaving the editor.
+  `README.zh-TW.md` sits alongside it. `scripts/capture-island.swift` takes the
+  screenshots and fills in the notch, which a plain `screencapture` renders as
+  menu-bar background — leaving the island looking like two floating blobs.
+- CI now fails when the docs and the code disagree, in three separate ways: the
+  numbers quoted in prose, the compatibility page, and the README's source tree.
+  Each is mutation-tested. The tree listed 19 of 44 files when the check was
+  added.
+
 ## [1.11.0] - 2026-08-21
 
 ### Added
