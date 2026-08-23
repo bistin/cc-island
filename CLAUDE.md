@@ -424,6 +424,24 @@ half at 1 MiB, cut at a line boundary — half rather than all so trimming is ra
 so the first surviving line is not a fragment that reads like corruption. Writes are queued off the
 caller's thread: a logger that can break the thing it is observing is worse than no logger.
 
+## Where view logic lives
+
+The rule the `Views/` split is drifting toward: **the view owns what things look like, the core
+owns what things are.** `DiffDetailView` is the worked example — `DynamicIslandCore.DiffLines`
+decides whether a block is a diff and what kind each line is, and the view maps a kind to a colour.
+
+That boundary is not tidiness. The one rule in there with a real edge case is that a block is only
+read as a diff if it contains an **addition**: a detail made of markdown bullets (`- one`,
+`- two`) is perfectly ordinary, and taking a leading `- ` as authoritative would paint every one
+of them in delete-red as though the agent were removing them. An addition has no such collision.
+While that lived in the view it could only be checked by looking at a screenshot.
+
+**Verifying a refactor that must not change the picture:** capture the same UI before and after
+and compare pixels — and then capture the *same build twice* as a control. Two captures of one
+build differ, because text inside a `ScrollView` lands on a different sub-pixel offset each time.
+On this one the control was noisier than the comparison (0.83% of pixels against 0.56%, in the
+same bounding box), which says the remaining difference is the camera rather than the code.
+
 ## Conventions
 
 - Pure Swift, no external dependencies — only Foundation, AppKit, SwiftUI, Network frameworks

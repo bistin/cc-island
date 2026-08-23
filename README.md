@@ -90,7 +90,7 @@ cd cc-island
 # Build (produces both DynamicIsland app and the hook binary)
 swift build -c release
 
-# Run unit tests (390 tests: hook payload formatting, HTTP parser, screen resolver, and more)
+# Run unit tests (403 tests: hook payload formatting, HTTP parser, screen resolver, and more)
 swift test
 
 # Render the app icon (AppKit only — no design tool needed)
@@ -296,13 +296,14 @@ Sources/
 │   ├── HookCommandParse.swift          # recognising our own entries in someone else's config
 │   ├── HexColor.swift                  # #rrggbb → RGB for the configurable source colours
 │   ├── LogLine.swift                   # log line format and the trim that stops it growing
+│   ├── DiffLines.swift                 # is this block a diff, and what kind is each line
 │   └── ScreenResolver.swift            # point-in-rect screen lookup
 └── island-hook/                    # Tiny CLI binary deployed into each tool's hook dir
     └── main.swift                      # I/O shell — reads stdin, dispatches via core, POSTs
 
 Tests/
 ├── IslandHookCoreTests/            # 168 tests — payload building, plan parsing, stop replies
-└── DynamicIslandCoreTests/         # 222 tests — HTTP framing, event decoding, login-item state
+└── DynamicIslandCoreTests/         # 235 tests — HTTP framing, event decoding, login-item state
 ```
 
 Three scripts fail CI when the documentation and the code disagree, and each is mutation-tested
@@ -321,7 +322,8 @@ under tmux has two ttys, and what was measured rather than assumed.
 - Answering a question *on* the island rather than jumping to the terminal. The long-poll
   machinery already exists; what stops it is that `PreToolUse` can only allow or deny, so a choice
   would reach Claude as "blocked, and here is why" rather than as an answer.
-- Split `IslandView.swift` further and keep moving non-rendering logic into the pure libraries.
+- Keep moving non-rendering logic out of the views. `DiffLines` is the pattern: the view owns
+  what things look like, the core owns what things are, and the core half gets tests.
 
 ## License
 

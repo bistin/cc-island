@@ -1,3 +1,4 @@
+import DynamicIslandCore
 import SwiftUI
 
 // MARK: - Diff Detail (colored + / - lines)
@@ -12,15 +13,8 @@ struct DiffDetailView: View {
     /// rendering used by the notch layout.
     var scrollable: Bool = false
 
-    private var lines: [Substring] { text.split(separator: "\n", omittingEmptySubsequences: false) }
-
-    /// True when the text looks like a unified diff (has at least one
-    /// line starting with `+ ` — additions). Without this guard, plain
-    /// markdown bullet lines (`- foo`) on a non-diff Stop reply detail
-    /// would render bright red as if they were diff deletions.
-    private var looksLikeDiff: Bool {
-        lines.contains { $0.hasPrefix("+ ") }
-    }
+    private var lines: [Substring] { DiffLines.split(text) }
+    private var kinds: [DiffLineKind] { DiffLines.kinds(of: text) }
 
     private let maxVisibleHeight: CGFloat = 160
     private let minVisibleHeight: CGFloat = 46
@@ -51,39 +45,49 @@ struct DiffDetailView: View {
 
     private var linesStack: some View {
         VStack(alignment: .leading, spacing: 1) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                lineText(line)
+            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                lineText(line, kind: kind(at: index))
             }
         }
     }
 
     private var truncatedStack: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            ForEach(Array(lines.prefix(10).enumerated()), id: \.offset) { _, line in
-                lineText(line)
+        let shown = DiffLines.compact(text)
+        return VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(shown.lines.enumerated()), id: \.offset) { index, line in
+                lineText(line, kind: kind(at: index))
             }
-            if lines.count > 10 {
-                Text("… +\(lines.count - 10) more")
+            if shown.hidden > 0 {
+                Text("… +\(shown.hidden) more")
                     .font(.system(size: 10))
                     .foregroundColor(.white.opacity(0.4))
             }
         }
     }
 
-    private func lineText(_ line: Substring) -> some View {
+    /// The classification is made against the whole block, so a truncated view still colours its
+    /// lines the way the full one would.
+    private func kind(at index: Int) -> DiffLineKind {
+        index < kinds.count ? kinds[index] : .plain
+    }
+
+    private func lineText(_ line: Substring, kind: DiffLineKind) -> some View {
         Text(line)
             .font(.system(size: 11, design: .monospaced))
-            .foregroundColor(color(for: line))
+            .foregroundColor(Self.color(for: kind))
             .lineLimit(1)
             .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func color(for line: Substring) -> Color {
-        guard looksLikeDiff else { return .white.opacity(0.65) }
-        if line.hasPrefix("- ") { return Color(red: 1.0, green: 0.55, blue: 0.55) }
-        if line.hasPrefix("+ ") { return Color(red: 0.55, green: 0.95, blue: 0.65) }
-        return .white.opacity(0.65)
+    /// Colours only. Whether a line *is* an addition is `DiffLines`' business, and testable
+    /// there; what red and green look like is this file's.
+    private static func color(for kind: DiffLineKind) -> Color {
+        switch kind {
+        case .removed: return Color(red: 1.0, green: 0.55, blue: 0.55)
+        case .added:   return Color(red: 0.55, green: 0.95, blue: 0.65)
+        case .plain:   return .white.opacity(0.65)
+        }
     }
 }
 

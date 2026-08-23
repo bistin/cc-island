@@ -209,7 +209,8 @@ binary。完整的檔案樹在[英文版](README.md#architecture)。
   已經做完了。
 - **在島上直接回答問題**，而不是跳去終端機。長輪詢的機制已經有了；卡住的是 `PreToolUse` 只能
   准或擋，所以選擇會以「被擋了，原因是⋯」的形式抵達 Claude，而不是一個答案。
-- 繼續拆 `IslandView.swift`，把非渲染的邏輯往純邏輯 library 收。
+- 繼續把非渲染的邏輯移出 view。`DiffLines` 是範本：view 負責東西長什麼樣，core 負責東西是什麼，
+  而 core 那半有測試。
 
 ## 授權
 
