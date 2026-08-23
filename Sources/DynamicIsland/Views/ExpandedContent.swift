@@ -52,7 +52,8 @@ struct ExpandedContentView: View {
                     stateManager: stateManager,
                     suggestedRule: event.suggestedRule,
                     eventID: event.id,
-                    tty: event.tty
+                    tty: event.tty,
+                    tmuxSocket: event.tmuxSocket
                 )
             }
 

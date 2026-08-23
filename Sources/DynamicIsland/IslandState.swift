@@ -521,9 +521,27 @@ class IslandStateManager: ObservableObject {
             hasReplyMode: event.replyMode != nil,
             hasTTY: !(event.tty ?? "").isEmpty,
             clickToTerminalEnabled: dynamicIslandUserDefaults.bool(forKey: clickToTerminalKey)
-        ), let tty = event.tty, TerminalActivator.hasRunningTerminal() else { return false }
-        TerminalActivator.activate(tty: tty, tmuxSocket: event.tmuxSocket)
+        ), focusTerminal(tty: event.tty, tmuxSocket: event.tmuxSocket) else { return false }
         dismiss()
+        return true
+    }
+
+    /// Focus a terminal and leave the island where it is.
+    ///
+    /// Separate from ``jumpToTerminal(for:)`` because the permission dialog's
+    /// "Jump to terminal tab" must *not* dismiss: the decision is still
+    /// outstanding and a hook is still long-polling for it. Walking away from
+    /// the island is fine; taking the buttons with you is not.
+    ///
+    /// It lives here rather than in the button's closure because a closure is
+    /// where policy goes to be forgotten — this one called
+    /// `TerminalActivator.activate(tty:)` with no socket, so a pane on a
+    /// `tmux -L` server was unreachable from this button months after the rest
+    /// of the app learned to reach it.
+    @discardableResult
+    func focusTerminal(tty: String?, tmuxSocket: String?) -> Bool {
+        guard let tty, !tty.isEmpty, TerminalActivator.hasRunningTerminal() else { return false }
+        TerminalActivator.activate(tty: tty, tmuxSocket: tmuxSocket)
         return true
     }
 
