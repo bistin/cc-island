@@ -51,6 +51,18 @@ either way.
 The log line reads the endpoint back out of the listener rather than restating it, because "it
 says 127.0.0.1 in the source" is exactly what was true throughout.
 
+**Focusing a terminal goes through the state manager, never straight to `TerminalActivator`.**
+`IslandStateManager.focusTerminal(tty:tmuxSocket:)` focuses and leaves the island alone;
+`jumpToTerminal(for:)` is that plus a dismiss, and applies the tap policy. The permission dialog's
+"Jump to terminal tab" needs the first: the decision is still outstanding and a hook is still
+long-polling for it, so walking away from the island is fine but taking the buttons with you is
+not.
+
+That button used to call `TerminalActivator.activate(tty:)` in its own closure, and so never
+learned about the tmux socket — a pane on a `tmux -L` server was unreachable from it for as long
+as the socket support had existed. A closure is where policy goes to be forgotten. Nothing in
+`Views/` calls the activator directly any more.
+
 ## HTTP framing
 
 `LocalServer.handleConnection` used to call `connection.receive()` once and assume the bytes were one complete request. That's wrong for any TCP stream: `URLSession` on loopback routinely delivers headers in one chunk and body in the next, so `island-hook` POSTs silently failed with 400 `missing_body` (~80% drop rate measured in practice). Fixed in v1.6: the server now loops `receive()` until the full request is buffered (1 MiB cap; fail-fast 413 on declared oversize). Parsing is extracted into `DynamicIslandCore.HTTPParser` with 15 unit tests. Hardening per RFC 7230: duplicate/conflicting `Content-Length` → 400, `Transfer-Encoding` (no chunked decoder) → 400.

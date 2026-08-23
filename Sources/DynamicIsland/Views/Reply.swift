@@ -31,6 +31,9 @@ struct PermissionActionButtons: View {
     let suggestedRule: PermissionRuleSuggestion?
     let eventID: UUID
     let tty: String?
+    /// Carried alongside the tty so the jump can reach a pane on a named tmux
+    /// server, the same way a tap on the ears does.
+    let tmuxSocket: String?
 
     @AppStorage(clickToTerminalKey, store: dynamicIslandUserDefaults)
     private var clickToTerminalEnabled = true
@@ -122,7 +125,9 @@ struct PermissionActionButtons: View {
             // ear, which isn't obvious. Doesn't resolve the permission;
             // user still has to come back and pick Allow/Deny.
             if canJumpToTab, let tty {
-                Button(action: { TerminalActivator.activate(tty: tty) }) {
+                Button(action: {
+                    stateManager.focusTerminal(tty: tty, tmuxSocket: tmuxSocket)
+                }) {
                     HStack(spacing: 6) {
                         Image(systemName: "terminal")
                             .font(.system(size: 11))
