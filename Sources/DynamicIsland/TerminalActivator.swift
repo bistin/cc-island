@@ -1,4 +1,5 @@
 import AppKit
+import DynamicIslandCore
 import Foundation
 
 /// Bring the terminal tab whose controlling TTY matches `tty` to the front.
@@ -64,9 +65,8 @@ enum TerminalActivator {
             // nil means "not a tmux pane", which is the ordinary case; carry
             // on with the tty we were given rather than giving up.
             let revealed = TmuxBridge.reveal(tty: tty, socket: tmuxSocket)
-            Log.write(revealed.map { "activate: tmux selected the pane, emulator tty \($0)" }
-                      ?? "activate: \(tty) is not a tmux pane")
-            let emulatorTTY = revealed ?? tty
+            Log.write("activate: " + describeTmuxReveal(revealed, requested: tty))
+            let emulatorTTY = revealed.effectiveTTY(requested: tty)
             DispatchQueue.main.async { activateFrontmost(tty: emulatorTTY) }
         }
     }
@@ -81,10 +81,9 @@ enum TerminalActivator {
     ///
     /// Returns a line describing what happened, for a person reading it in a terminal.
     static func revealSynchronously(tty: String, tmuxSocket: String? = nil) -> String {
-        let tmuxTTY = TmuxBridge.reveal(tty: tty, socket: tmuxSocket)
-        let effective = tmuxTTY ?? tty
-        var notes = tmuxTTY.map { "tmux: pane selected, emulator knows it as \($0)" }
-            ?? "tmux: not a pane (no server, non-default socket, or not under tmux)"
+        let revealed = TmuxBridge.reveal(tty: tty, socket: tmuxSocket)
+        let effective = revealed.effectiveTTY(requested: tty)
+        var notes = "tmux: " + describeTmuxReveal(revealed, requested: tty)
 
         let runningIDs = Set(
             NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier }
@@ -98,9 +97,9 @@ enum TerminalActivator {
             return notes
         }
         notes += "\napplescript: no tab matched \(effective)"
-        notes += tmuxTTY == nil
-            ? " — nothing more to try"
-            : " — expected for a terminal with no tab model; tmux already aimed the pane"
+        notes += revealed.didSelect
+            ? " — expected for a terminal with no tab model; tmux already aimed the pane"
+            : " — nothing more to try"
         return notes
     }
 

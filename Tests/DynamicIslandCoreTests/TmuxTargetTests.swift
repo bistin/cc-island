@@ -123,3 +123,71 @@ final class TmuxTargetTests: XCTestCase {
         XCTAssertEqual(TmuxTargetResolver.normalize(" /dev/pts/3 "), "pts/3")
     }
 }
+
+// MARK: - Three outcomes, not two
+
+final class TmuxRevealOutcomeTests: XCTestCase {
+
+    /// The bug. A detached session's pane still gets selected — that is why every pane on the
+    /// server is listed rather than the attached session's — but the emulator tty is nil for one,
+    /// and an optional return made that indistinguishable from "no pane found". Selecting a pane
+    /// on a detached server reported not finding one, while having just moved the selection.
+    func testASelectedPaneWithNoClientIsStillASelection() {
+        let detached = TmuxRevealOutcome.selected(emulatorTTY: nil)
+        XCTAssertTrue(detached.didSelect)
+        XCTAssertNotEqual(detached, .notAPane)
+    }
+
+    func testEachOutcomeReadsDifferently() {
+        let said = [
+            describeTmuxReveal(.notAPane, requested: "/dev/ttys003"),
+            describeTmuxReveal(.selected(emulatorTTY: "/dev/ttys007"), requested: "/dev/ttys003"),
+            describeTmuxReveal(.selected(emulatorTTY: nil), requested: "/dev/ttys003"),
+        ]
+        XCTAssertEqual(Set(said).count, 3, "three outcomes that print as fewer is the bug itself")
+    }
+
+    func testTheNotAPaneLineNamesTheTTYItLookedFor() {
+        XCTAssertTrue(describeTmuxReveal(.notAPane, requested: "/dev/ttys003")
+            .contains("/dev/ttys003"))
+    }
+
+    func testADetachedSelectionDoesNotClaimAnEmulator() {
+        let line = describeTmuxReveal(.selected(emulatorTTY: nil), requested: "/dev/ttys003")
+        XCTAssertTrue(line.contains("no client attached"), line)
+        XCTAssertFalse(line.contains("emulator tty"), line)
+    }
+
+    /// No prefix: the same sentence goes to the log behind "activate: " and to `--reveal-tty`
+    /// behind "tmux: ", and one of those used to read "tmux: tmux selected the pane".
+    func testTheSentenceCarriesNoPrefixOfItsOwn() {
+        for outcome: TmuxRevealOutcome in [.notAPane, .selected(emulatorTTY: "/dev/ttys007"),
+                                           .selected(emulatorTTY: nil)] {
+            let line = describeTmuxReveal(outcome, requested: "/dev/ttys003")
+            XCTAssertFalse(line.hasPrefix("tmux:"), line)
+            XCTAssertFalse(line.hasPrefix("activate:"), line)
+        }
+    }
+
+    // MARK: - Which tty goes on to AppleScript
+
+    func testAnAttachedSelectionHandsOverTheEmulatorTTY() {
+        XCTAssertEqual(
+            TmuxRevealOutcome.selected(emulatorTTY: "/dev/ttys007").effectiveTTY(requested: "/dev/ttys003"),
+            "/dev/ttys007", "the tty an emulator knows the tab by — the whole point of the join")
+    }
+
+    /// Nothing for AppleScript to match, so the original is carried on with; tmux already did its
+    /// part and the fallback should not be handed a nil.
+    func testADetachedSelectionFallsBackToTheRequestedTTY() {
+        XCTAssertEqual(
+            TmuxRevealOutcome.selected(emulatorTTY: nil).effectiveTTY(requested: "/dev/ttys003"),
+            "/dev/ttys003")
+    }
+
+    func testNotAPaneCarriesOnWithWhatItWasGiven() {
+        XCTAssertEqual(TmuxRevealOutcome.notAPane.effectiveTTY(requested: "/dev/ttys003"),
+                       "/dev/ttys003")
+        XCTAssertFalse(TmuxRevealOutcome.notAPane.didSelect)
+    }
+}

@@ -51,6 +51,15 @@ either way.
 The log line reads the endpoint back out of the listener rather than restating it, because "it
 says 127.0.0.1 in the source" is exactly what was true throughout.
 
+**A tmux reveal has three outcomes, not two.** `DynamicIslandCore.TmuxRevealOutcome` is
+`notAPane` or `selected(emulatorTTY:)`, where the emulator tty is nil for a *detached* session.
+That distinction was originally an optional return, which made "selected a pane nobody is looking
+at" indistinguishable from "found no pane" — so selecting a pane on a detached server logged
+`is not a tmux pane` while having just moved the selection. Caught end to end by a test whose
+`tmux attach` had quietly exited: the message said nothing was found and `window_active` moved
+anyway. The modelling lives in the core because conflating two facts in one optional is what a
+type can prevent and a test can catch.
+
 **Focusing a terminal goes through the state manager, never straight to `TerminalActivator`.**
 `IslandStateManager.focusTerminal(tty:tmuxSocket:)` focuses and leaves the island alone;
 `jumpToTerminal(for:)` is that plus a dismiss, and applies the tap policy. The permission dialog's
