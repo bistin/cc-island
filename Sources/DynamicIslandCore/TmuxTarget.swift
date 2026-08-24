@@ -102,3 +102,55 @@ public enum TmuxTargetResolver {
         return s
     }
 }
+
+/// What happened when a tty was handed to tmux.
+///
+/// **Three outcomes, and they used to be two.** The bridge returned an optional: nil for "not a
+/// tmux pane", a value for "selected, and here is the emulator's tty". But the emulator's tty is
+/// nil for a *detached* session — and a detached session's pane still gets selected, which is the
+/// whole reason every pane on the server is listed rather than the attached session's. So
+/// selecting a pane on a detached server reported not finding one, while having just moved the
+/// selection, and the log said so out loud.
+///
+/// Caught end to end by a test whose `tmux attach` had quietly exited: the message said nothing
+/// was found and `window_active` moved anyway. The modelling is here rather than in the bridge
+/// because conflating two facts in one optional is the kind of mistake a type can prevent and a
+/// test can catch.
+public enum TmuxRevealOutcome: Equatable, Sendable {
+    /// Not a pane on any server that could be seen — no tmux, no server, or a session running
+    /// straight in a terminal. The caller carries on with the tty it had.
+    case notAPane
+    /// The pane was selected. `emulatorTTY` is the tty a terminal emulator knows it by, or nil
+    /// when no client is attached: nobody is looking at it, and the next attach lands there.
+    case selected(emulatorTTY: String?)
+
+    /// The tty to hand to the AppleScript route, given the one originally asked about.
+    ///
+    /// A selected pane with no client attached leaves AppleScript nothing to match, so the
+    /// original is carried on with — tmux has already done its part.
+    public func effectiveTTY(requested: String) -> String {
+        switch self {
+        case .selected(let emulator?): return emulator
+        case .selected(nil), .notAPane: return requested
+        }
+    }
+
+    /// Whether tmux aimed the pane, whatever AppleScript makes of it afterwards.
+    public var didSelect: Bool {
+        if case .selected = self { return true }
+        return false
+    }
+}
+
+/// One line saying what tmux did, without a prefix — callers add their own, because the same
+/// sentence is written to the log and printed by `--reveal-tty`.
+public func describeTmuxReveal(_ outcome: TmuxRevealOutcome, requested tty: String) -> String {
+    switch outcome {
+    case .notAPane:
+        return "\(tty) is not a tmux pane"
+    case .selected(let emulator?):
+        return "selected the pane, emulator tty \(emulator)"
+    case .selected(nil):
+        return "selected the pane; no client attached, so nothing is showing it"
+    }
+}

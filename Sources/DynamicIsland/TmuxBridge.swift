@@ -45,25 +45,25 @@ enum TmuxBridge {
     /// `socket` addresses a server started with `tmux -L name` or `-S path`, forwarded by the
     /// hook from inside the pane. nil means the default socket, which is what tmux uses with no
     /// `-S` — and what this could see exclusively before the hook started sending it.
-    static func reveal(tty: String, socket: String? = nil) -> String? {
-        guard let bin = binary else { return nil }
+    static func reveal(tty: String, socket: String? = nil) -> TmuxRevealOutcome {
+        guard let bin = binary else { return .notAPane }
         // `-S` must precede the command, so it is prepended rather than appended.
         let prefix: [String] = socket.map { ["-S", $0] } ?? []
         // `-a`: every pane on the server, not only the attached session's. A detached session is
         // still a place a pane can be selected, and the next attach lands on it.
         guard let panes = run(bin, prefix + ["list-panes", "-a", "-F", TmuxTargetResolver.paneFormat]) else {
-            return nil   // no server running: tmux exits non-zero, which is an answer, not an error
+            return .notAPane   // no server: tmux exits non-zero, which is an answer, not an error
         }
         let clients = run(bin, prefix + ["list-clients", "-F", TmuxTargetResolver.clientFormat]) ?? ""
         guard let target = TmuxTargetResolver.resolve(tty: tty, panes: panes, clients: clients) else {
-            return nil
+            return .notAPane
         }
         // Both, and in this order: `select-pane` moves within the window, `select-window` brings
         // that window to the front of its session. Either alone leaves you looking at the wrong
         // half of the answer.
         _ = run(bin, prefix + ["select-pane", "-t", target.paneID])
         _ = run(bin, prefix + ["select-window", "-t", target.paneID])
-        return target.clientTTY
+        return .selected(emulatorTTY: target.clientTTY)
     }
 
     /// nil on a non-zero exit or a launch failure. tmux uses the exit code to say "no server", so
