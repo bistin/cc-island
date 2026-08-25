@@ -90,7 +90,7 @@ cd cc-island
 # Build (produces both DynamicIsland app and the hook binary)
 swift build -c release
 
-# Run unit tests (411 tests: hook payload formatting, HTTP parser, screen resolver, and more)
+# Run unit tests (418 tests: hook payload formatting, HTTP parser, screen resolver, and more)
 swift test
 
 # Render the app icon (AppKit only — no design tool needed)
@@ -303,7 +303,7 @@ Sources/
 
 Tests/
 ├── IslandHookCoreTests/            # 168 tests — payload building, plan parsing, stop replies
-└── DynamicIslandCoreTests/         # 243 tests — HTTP framing, event decoding, login-item state
+└── DynamicIslandCoreTests/         # 250 tests — HTTP framing, event decoding, login-item state
 ```
 
 Three scripts fail CI when the documentation and the code disagree, and each is mutation-tested

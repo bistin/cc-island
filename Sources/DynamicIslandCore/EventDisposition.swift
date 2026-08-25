@@ -217,3 +217,23 @@ public func expandedPanelExtraHeight(
     let decisions: CGFloat = CGFloat(max(0, decisionRows)) * 52
     return tree + detail + decisions
 }
+
+/// How many session rows to draw, and how many to report as not drawn.
+///
+/// **A tree with no ceiling is a panel with no ceiling.** Rows are 18 points each and the height
+/// arithmetic multiplied by however many there were, so fourteen subagents produced a panel taller
+/// than the screen with its last rows cut off — including, in the case that prompted this, the
+/// question the user was being asked, pushed up and away by things that had already finished.
+///
+/// The cap is a floor under correctness rather than a substitute for it: what put fourteen rows
+/// there was a close path that never fired, and that is fixed separately. This is what keeps the
+/// next leak from being unbounded.
+///
+/// Five, because the main session takes one and four is enough parallel work to see at a glance.
+/// Past that the count carries more than the names do, especially when a workflow spawns agents
+/// that all share one type and so all render the same label.
+public func sessionRowsToShow(total: Int, limit: Int = 5) -> (shown: Int, hidden: Int) {
+    guard total > limit else { return (max(0, total), 0) }
+    // One row is given up to the "and N more" line, so the drawn count never exceeds the limit.
+    return (limit - 1, total - (limit - 1))
+}

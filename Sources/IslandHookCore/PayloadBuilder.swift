@@ -424,10 +424,22 @@ public func buildSubagentStartPayload(_ plan: HookPlan) -> [String: Any] {
     ])
 }
 
+/// An agent finishing.
+///
+/// **`closes_agent` is the important field.** This payload carries the agent's id like every
+/// other, and the app routes anything with an id into that agent's row — so the event announcing
+/// that an agent had finished was *re-creating the row it had just been asked to remove*, and
+/// refreshing its idle clock while doing it. Every finished subagent then sat in the tree for the
+/// full sweep interval, which is how a workflow spawning agents in a loop fills the panel with
+/// things that are no longer running.
+///
+/// The flag says "show this, then close the channel", which is one message with one meaning
+/// rather than two that disagree.
 public func buildSubagentStopPayload(_ plan: HookPlan) -> [String: Any] {
     let agentTy = (plan.payload["agent_type"] as? String) ?? "agent"
     return plan.decorate([
         "title": "Agent done", "subtitle": agentTy, "style": "success", "duration": 2,
+        "closes_agent": true,
     ])
 }
 

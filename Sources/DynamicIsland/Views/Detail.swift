@@ -96,14 +96,23 @@ struct DiffDetailView: View {
 struct SessionTreeView: View {
     let sessions: [SessionChannel]
 
+    /// Bounded, so a leak in the close path cannot make the panel taller than the screen again.
+    private var budget: (shown: Int, hidden: Int) { sessionRowsToShow(total: sessions.count) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Divider()
                 .overlay(Color.white.opacity(0.08))
                 .padding(.bottom, 2)
 
-            ForEach(sessions) { session in
+            ForEach(Array(sessions.prefix(budget.shown))) { session in
                 SessionRow(session: session)
+            }
+            if budget.hidden > 0 {
+                Text("and \(budget.hidden) more")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.4))
+                    .padding(.leading, 2)
             }
         }
     }

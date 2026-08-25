@@ -414,3 +414,62 @@ final class ExpandedPanelHeightTests: XCTestCase {
             expandedPanelExtraHeight(sessionRows: -1, detailLines: -5, decisionRows: -2), 0)
     }
 }
+
+// MARK: - The session tree has a ceiling
+
+final class SessionRowBudgetTests: XCTestCase {
+
+    /// The case that prompted this: fourteen rows made a panel taller than the screen, with its
+    /// last rows cut off — including the question the user was being asked, pushed away by agents
+    /// that had already finished.
+    func testFourteenRowsDoNotDrawFourteen() {
+        let (shown, hidden) = sessionRowsToShow(total: 14)
+        XCTAssertEqual(shown, 4)
+        XCTAssertEqual(hidden, 10)
+        XCTAssertEqual(shown + 1, 5, "the drawn rows plus the summary line stay within the limit")
+    }
+
+    /// A tree that fits is drawn whole; nothing is summarised away for the sake of symmetry.
+    func testASmallTreeIsDrawnWhole() {
+        for n in 0...5 {
+            let (shown, hidden) = sessionRowsToShow(total: n)
+            XCTAssertEqual(shown, n, "total \(n)")
+            XCTAssertEqual(hidden, 0, "total \(n)")
+        }
+    }
+
+    /// One past the limit still costs a row for the summary — which means six rows draw four and
+    /// say "and 2 more" rather than drawing five. Stated because it looks off by one until you
+    /// remember the summary is itself a row.
+    func testOnePastTheLimitGivesUpARowToTheSummary() {
+        let (shown, hidden) = sessionRowsToShow(total: 6)
+        XCTAssertEqual(shown, 4)
+        XCTAssertEqual(hidden, 2)
+    }
+
+    func testEverythingIsAccountedFor() {
+        for n in 0...40 {
+            let (shown, hidden) = sessionRowsToShow(total: n)
+            XCTAssertEqual(shown + hidden, n, "total \(n) — rows must not be lost or invented")
+        }
+    }
+
+    /// However many arrive, the panel's row count is bounded — which is the whole point, given
+    /// what put fourteen there was a close path that never fired.
+    func testTheDrawnCountIsBoundedWhateverArrives() {
+        for n in [50, 500, 5000] {
+            let (shown, hidden) = sessionRowsToShow(total: n)
+            XCTAssertLessThanOrEqual(shown + (hidden > 0 ? 1 : 0), 5)
+        }
+    }
+
+    func testAnExplicitLimitIsHonoured() {
+        XCTAssertEqual(sessionRowsToShow(total: 10, limit: 3).shown, 2)
+        XCTAssertEqual(sessionRowsToShow(total: 10, limit: 3).hidden, 8)
+    }
+
+    func testNegativeAndZeroAreNotNegative() {
+        XCTAssertEqual(sessionRowsToShow(total: 0).shown, 0)
+        XCTAssertEqual(sessionRowsToShow(total: -3).shown, 0)
+    }
+}
