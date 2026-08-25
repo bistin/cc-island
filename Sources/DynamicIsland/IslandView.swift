@@ -36,20 +36,7 @@ struct IslandRootView: View {
     }
 
     private func updatePanelSize() {
-        // The height follows what is drawn, not what exists — the two stopped being the same
-        // when the tree grew a ceiling.
-        let budget = sessionRowsToShow(total: stateManager.activeSessions.count)
-        let rows = budget.shown + (budget.hidden > 0 ? 1 : 0)
-        let detailLines = stateManager.currentEvent?.detail
-            .map { min($0.split(separator: "\n").count, 10) } ?? 0
-        let size = IslandPanel.adjustedSize(
-            mode: stateManager.mode,
-            event: stateManager.currentEvent,
-            hasNotch: hasNotch,
-            sessionRows: rows,
-            detailLines: detailLines,
-            decisionRows: decisionRowCount(stateManager.currentEvent)
-        )
+        let size = IslandPanel.size(for: stateManager, hasNotch: hasNotch)
         panel?.updateSize(to: size)
     }
 
