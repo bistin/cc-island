@@ -222,7 +222,10 @@ case "SubagentStart":
     send(buildSubagentStartPayload(plan))
 
 case "SubagentStop":
-    send(["type": "subagent_stop"])
+    // The agent id was missing here, which made the whole message a no-op: the app's handler
+    // reads it to know which row to close and returned early without one. Nothing ever removed
+    // a subagent row, and the 90-second sweep was the only thing that did.
+    send(["type": "subagent_stop", "agent_id": plan.payload["agent_id"] as? String ?? ""])
     send(buildSubagentStopPayload(plan))
 
 case "SessionStart":

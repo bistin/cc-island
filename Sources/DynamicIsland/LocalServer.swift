@@ -459,13 +459,21 @@ class LocalServer {
         let agentId = json["agent_id"] as? String
         let agentType = json["agent_type"] as? String
         let sessionId = agentId ?? "main"
-        stateManager?.updateSession(
-            id: sessionId,
-            agentType: agentType,
-            project: project,
-            title: title,
-            subtitle: subtitle
-        )
+        // An event that closes its channel is still worth showing — "Agent done" flashes in the
+        // ears — but it must not leave a row behind. It used to: carrying an agent id was enough
+        // to re-create the row the close had just removed, with a fresh idle clock.
+        let closesAgent = json["closes_agent"] as? Bool ?? false
+        if closesAgent, let agentId {
+            stateManager?.removeSession(id: agentId)
+        } else {
+            stateManager?.updateSession(
+                id: sessionId,
+                agentType: agentType,
+                project: project,
+                title: title,
+                subtitle: subtitle
+            )
+        }
 
         stateManager?.pushEvent(event)
     }

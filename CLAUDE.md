@@ -350,6 +350,34 @@ Two changes, and the second is the one that matters more:
 Found while taking README screenshots, by noticing that one payload rendered its diff as a
 `reminder` and rendered nothing as an `action`.
 
+## The session tree
+
+One row per agent, keyed by `agent_id` — main plus any subagents. Two things about it were wrong
+in a way that only showed up under a workflow spawning agents in a loop, and were found from a
+screenshot of fourteen rows with the question the user was being asked pushed off the top.
+
+**Nothing ever closed a row.** `SubagentStop` sends `{"type": "subagent_stop"}`, and the app's
+handler reads `agent_id` from it to know which row to close — but the hook was not putting one in,
+so the handler returned early every time. That made the message dead code. Worse, the `Agent done`
+event that follows carries an `agent_id` like every other event, so it *re-created* the row and
+refreshed its idle clock. Every finished subagent therefore sat in the tree for the full 90-second
+sweep, minimum, with no way to leave sooner.
+
+Fixed on both sides: the close message carries the id, and the event carries `closes_agent`, which
+routes it to `removeSession` instead of `updateSession`. It still shows — "Agent done" flashes in
+the ears — it just does not leave a row.
+
+**The tree had no ceiling.** `sessionRowsToShow(total:limit:)` now bounds it at five, the last of
+which is "and N more". That is a floor under correctness rather than a substitute for it: what put
+fourteen rows there was the close path above. The cap is what keeps the next leak from being
+unbounded, since rows are 18 points each and the height arithmetic multiplied by however many
+there were.
+
+Verified against the running app with fourteen synthetic subagents *and* a live session's real
+ones arriving alongside: the panel stayed at four rows plus a count, and closing dropped the tree
+from 23 rows to 14 within two seconds — well inside the sweep interval, which is what says the
+removal happened rather than the timer.
+
 ## Permission Flow
 
 `PermissionRequest` hook POSTs an `action`-style event (Permission title + tool detail), then long-polls `GET /response` for up to the permission-timeout setting (default 300s / 5 min). The UI buttons call `LocalServer.setResponse("allow"|"deny")`, which resumes the waiter. If no waiter is present the value is stored in `pendingResponse` for the next poll — but never persisted past a single delivery, to avoid stale clicks leaking into future requests. On timeout the hook exits silently and Claude Code falls back to its normal permission prompt.

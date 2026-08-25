@@ -1,3 +1,4 @@
+import DynamicIslandCore
 import SwiftUI
 
 // MARK: - Root View
@@ -35,7 +36,10 @@ struct IslandRootView: View {
     }
 
     private func updatePanelSize() {
-        let rows = stateManager.activeSessions.count
+        // The height follows what is drawn, not what exists — the two stopped being the same
+        // when the tree grew a ceiling.
+        let budget = sessionRowsToShow(total: stateManager.activeSessions.count)
+        let rows = budget.shown + (budget.hidden > 0 ? 1 : 0)
         let detailLines = stateManager.currentEvent?.detail
             .map { min($0.split(separator: "\n").count, 10) } ?? 0
         let size = IslandPanel.adjustedSize(
