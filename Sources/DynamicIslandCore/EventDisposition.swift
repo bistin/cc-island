@@ -237,3 +237,29 @@ public func sessionRowsToShow(total: Int, limit: Int = 5) -> (shown: Int, hidden
     // One row is given up to the "and N more" line, so the drawn count never exceeds the limit.
     return (limit - 1, total - (limit - 1))
 }
+
+/// What a tap on the expanded panel should do.
+///
+/// The three-way decision existed twice, inline in two views, and the copies had already drifted:
+/// the notch panel learned to take the tap to the terminal and the capsule did not, so on a
+/// display without a notch the panel never reached the session it was pointing at. Collecting it
+/// on the state manager stops that; putting the decision here is what makes it checkable without
+/// a window.
+public enum ExpandedTapAction: Equatable, Sendable {
+    /// Mid-decision — Allow/Deny, or quick replies. Collapsing sets a dismiss timer that would
+    /// strand a hook still long-polling for the answer, so a tap here does nothing at all.
+    case ignore
+    /// The panel is a pointer and the tap should follow it.
+    case jumpToTerminal
+    /// Nothing to follow; fold it away.
+    case collapse
+}
+
+public func expandedTapAction(
+    style: EventStyleShape,
+    hasReplyMode: Bool,
+    canJumpToTerminal: Bool
+) -> ExpandedTapAction {
+    if style == .action || hasReplyMode { return .ignore }
+    return canJumpToTerminal ? .jumpToTerminal : .collapse
+}

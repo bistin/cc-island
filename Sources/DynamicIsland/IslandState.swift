@@ -526,6 +526,36 @@ class IslandStateManager: ObservableObject {
         return true
     }
 
+    /// Single entry point for taps on the expanded panel.
+    ///
+    /// It existed twice, inline, and the two copies had already drifted: the notch panel learned
+    /// to jump to the terminal and the capsule did not, so on a display without a notch a tap on
+    /// the expanded panel never reached the session it was pointing at. That is the same failure
+    /// as the jump button — a policy copied into two closures, one of which learned something.
+    ///
+    /// Mid-decision events are left alone: collapsing sets a 2s dismiss timer that would strand a
+    /// hook still long-polling for an answer.
+    func handleExpandedTap(for event: IslandEvent) {
+        switch expandedTapAction(
+            style: event.style.dispositionShape,
+            hasReplyMode: event.replyMode != nil,
+            canJumpToTerminal: shouldTapJumpToTerminal(
+                style: event.style.dispositionShape,
+                hasReplyMode: event.replyMode != nil,
+                hasTTY: !(event.tty ?? "").isEmpty,
+                clickToTerminalEnabled: dynamicIslandUserDefaults.bool(forKey: clickToTerminalKey)
+            ) && TerminalActivator.hasRunningTerminal()
+        ) {
+        case .ignore:
+            return
+        case .jumpToTerminal:
+            focusTerminal(tty: event.tty, tmuxSocket: event.tmuxSocket)
+            dismiss()
+        case .collapse:
+            collapse()
+        }
+    }
+
     /// Focus a terminal and leave the island where it is.
     ///
     /// Separate from ``jumpToTerminal(for:)`` because the permission dialog's

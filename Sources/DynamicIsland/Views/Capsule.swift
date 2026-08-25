@@ -227,8 +227,7 @@ struct ExpandedPillView: View {
             // Don't collapse while the user is mid-decision: action events
             // (Allow/Deny) and reminders with quick-reply buttons. Collapsing
             // sets a 2 s dismiss timer that strands the long-polling hook.
-            if event.style == .action || event.replyMode != nil { return }
-            stateManager.collapse()
+            stateManager.handleExpandedTap(for: event)
         }
         .onAppear { updateActionPulse() }
         .onChange(of: event.id) { _ in updateActionPulse() }
