@@ -523,3 +523,41 @@ final class ExpandedTapActionTests: XCTestCase {
             .jumpToTerminal)
     }
 }
+
+// MARK: - What actually gets sent as an answer
+
+final class DeliverableResponseTests: XCTestCase {
+
+    func testAnOrdinaryAnswerGoesThroughTrimmed() {
+        XCTAssertEqual(deliverableResponse("allow", expired: false), "allow")
+        XCTAssertEqual(deliverableResponse("  yes please \n", expired: false), "yes please")
+    }
+
+    /// The guard that was in the wrong place. It lived in `.disabled(expired)` — a rendering
+    /// property — so a tap already in flight when the event expired still ran its closure and
+    /// still resolved a waiter that had stopped listening.
+    func testAnExpiredEventDeliversNothingHoweverGoodTheAnswer() {
+        XCTAssertNil(deliverableResponse("allow", expired: true))
+        XCTAssertNil(deliverableResponse("a carefully typed reply", expired: true))
+    }
+
+    /// A freeform reply of spaces is not a reply. The trim used to be in the view's submit() and
+    /// the button paths did none at all.
+    func testWhitespaceIsNotAnAnswer() {
+        XCTAssertNil(deliverableResponse("", expired: false))
+        XCTAssertNil(deliverableResponse("   ", expired: false))
+        XCTAssertNil(deliverableResponse("\n\t ", expired: false))
+    }
+
+    /// Returning the answer rather than a Bool is what lets a text field survive a rejected send
+    /// instead of being cleared out from under the user.
+    func testTheAnswerComesBackSoTheCallerKnowsWhatWentAndWhatDidNot() {
+        XCTAssertNotNil(deliverableResponse("keep this", expired: false))
+        XCTAssertNil(deliverableResponse("keep this", expired: true))
+    }
+
+    func testInnerWhitespaceSurvives() {
+        XCTAssertEqual(deliverableResponse("  hold the release  ", expired: false),
+                       "hold the release")
+    }
+}

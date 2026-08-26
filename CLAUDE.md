@@ -60,6 +60,15 @@ at" indistinguishable from "found no pane" — so selecting a pane on a detached
 anyway. The modelling lives in the core because conflating two facts in one optional is what a
 type can prevent and a test can catch.
 
+**Answering a decision goes through `IslandStateManager.respond(_:rule:eventID:)`**, and the rule
+behind it — trim, reject empty, reject expired — is `deliverableResponse` in `DynamicIslandCore`.
+The expiry check used to live only in `.disabled(expired)` on each button, which is a rendering
+property: a tap already in flight when `currentEventExpired` flipped still ran its closure and
+still resolved a waiter that had stopped listening. Checking at the moment of acting closes that,
+and every caller gets it rather than each one remembering. It also collects the "resolve, then
+dismiss" pairing that was written out five times with three different argument shapes. Nothing
+under `Views/` reaches `stateManager.server` any more.
+
 **Taps have one implementation each, on the state manager.** `handleCompactTap()` for the ears,
 `handleExpandedTap(for:)` for the panel, and the decisions behind them —
 `shouldTapJumpToTerminal`, `expandedTapAction` — in `DynamicIslandCore` where they can be checked
