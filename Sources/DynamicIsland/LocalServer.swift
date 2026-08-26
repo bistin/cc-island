@@ -9,7 +9,7 @@ import IslandHookCore
 /// Expected JSON body:
 /// ```json
 /// {
-///   "type": "tool_start" | "tool_end" | "notification" | "stop" | "error" | "custom",
+///   "type": "thinking_start" | "thinking_stop" | "subagent_stop" | "custom",
 ///   "title": "string",
 ///   "subtitle": "optional string",
 ///   "detail": "optional string",
@@ -373,11 +373,6 @@ class LocalServer {
             return
         }
 
-        // Regular events also stop thinking
-        if type == "stop" {
-            stateManager?.stopThinking()
-        }
-
         let title = json["title"] as? String ?? type
         let subtitle = json["subtitle"] as? String ?? ""
         let detail = json["detail"] as? String
@@ -398,9 +393,11 @@ class LocalServer {
 
         let style = EventStyle(rawValue: styleName) ?? .claude
 
-        // Icon is optional and only renders on the capsule. Hook-driven
-        // events don't set one; explicit callers (NotificationMonitor,
-        // manual POSTs) can still pass an emoji via the `icon` field.
+        // Icon is optional and only renders on the capsule. Nothing in this repo
+        // sends it over HTTP — NotificationMonitor builds its events in-process
+        // with `icon:` — so this exists purely for outside callers, and is
+        // documented in the README's field table so that is a real offer rather
+        // than a read with no writer.
         let icon = json["icon"] as? String ?? ""
 
         // Sub-decoders below live in `DynamicIslandCore` so the

@@ -27,7 +27,9 @@ The app listens on **port 9423** for HTTP POST events.
 
 ## Multi-display (follow cursor)
 
-The panel follows the user's cursor across screens. `ScreenFollower` polls `NSEvent.mouseLocation` every 50 ms with a 200 ms dwell debounce; `IslandPanel.relocate(to:)` fades out (0.15s), re-runs `applyScreenMetrics` for the target screen, `setFrame`s, and fades in (0.20s). Relocation triggers: `/event` POST (instant, via `IslandStateManager.pushEvent → panel?.relocateToCursorScreen`), cursor dwell ≥200 ms on a new screen, or `NSApplication.didChangeScreenParametersNotification`. Per-screen layout switches between notch and capsule (non-notch displays use `fallbackLayout`); mid-event state (permission dialogs, progress) survives the move. `NSScreen+Display` extracts `displayID` / `containing(_:)` so the formula lives in one place. Single-screen setups are unaffected — the dwell loop short-circuits every tick.
+The panel follows the user's cursor across screens. `ScreenFollower` polls `NSEvent.mouseLocation` every 50 ms with a 200 ms dwell debounce; `IslandPanel.relocate(to:)` fades out (0.15s), re-runs `applyScreenMetrics` for the target screen, `setFrame`s, and fades in (0.20s). Relocation triggers: `/event` POST (instant, via `IslandStateManager.pushEvent → panel?.relocateToCursorScreen`), cursor dwell ≥200 ms on a new screen, or `NSApplication.didChangeScreenParametersNotification`. Per-screen layout switches between notch and capsule (non-notch displays use `fallbackLayout`); mid-event state (permission dialogs, progress) survives the move. `NSScreen+Display` extracts `displayID` / `containing(_:)` so the formula lives in one place —
+and `containing(_:)` delegates to `DynamicIslandCore.ScreenResolver`, which had been written for
+exactly this and never called: the formula existed twice, and the copy with tests was the dead one. Single-screen setups are unaffected — the dwell loop short-circuits every tick.
 
 ## Where the server listens
 

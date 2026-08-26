@@ -207,6 +207,7 @@ curl -X POST http://127.0.0.1:9423/event \
 | `progress` | number | `null` | 0.0–1.0 progress bar / ring |
 | `persistent` | bool | `false` | Don't auto-dismiss (`true` for `action` / `reminder`) |
 | `tty` | string | `null` | `/dev/ttysNNN`, so a click can focus that terminal tab |
+| `icon` | string | `""` | An emoji, drawn on the capsule layout (displays without a notch) |
 
 POSTing the same `title` with a new `progress` updates in place rather than re-animating, which is
 how a long task streams without flickering.
