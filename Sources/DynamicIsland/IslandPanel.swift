@@ -1,4 +1,5 @@
 import AppKit
+import DynamicIslandCore
 import Combine
 import SwiftUI
 
@@ -185,15 +186,7 @@ class IslandPanel: NSPanel {
             // capsule. Must happen before setFrame so the view pass sees
             // the right `hasNotch` against the new window geometry.
             self.stateManager.hasNotch = hasNotch
-            let size = Self.adjustedSize(
-                mode: self.stateManager.mode,
-                event: self.stateManager.currentEvent,
-                hasNotch: hasNotch,
-                sessionRows: self.stateManager.activeSessions.count,
-                detailLines: self.stateManager.currentEvent?.detail
-                    .map { min($0.split(separator: "\n").count, 10) } ?? 0,
-                decisionRows: decisionRowCount(self.stateManager.currentEvent)
-            )
+            let size = Self.size(for: self.stateManager, hasNotch: hasNotch)
             let newFrame = Self.topCenteredFrame(on: target, size: size)
             self.setFrame(newFrame, display: true)
             self.syncPulsePanelFrame(mainFrame: newFrame)
@@ -218,6 +211,29 @@ class IslandPanel: NSPanel {
     /// in its own window now and the +30 pt strip would just block clicks.
     /// Called from both `IslandRootView.updatePanelSize` and `relocate(to:)`
     /// so every size computation stays in sync.
+    /// The panel size for the manager's current state.
+    ///
+    /// **One entry point, because three call sites each assembled these arguments and two of them
+    /// were wrong.** `relocate` passed the raw session count, so a screen move undid the row cap
+    /// and multiplied 18 points by every row that existed; `refreshLayoutForCurrentScreen` did
+    /// that *and* omitted `decisionRows` entirely — the exact omission that cost the permission
+    /// dialog its diff, still live on the display-change path days after being fixed on the other.
+    ///
+    /// Derived here rather than passed in, so a caller cannot supply a subset and get a plausible
+    /// answer.
+    static func size(for stateManager: IslandStateManager, hasNotch: Bool) -> CGSize {
+        let budget = sessionRowsToShow(total: stateManager.activeSessions.count)
+        return adjustedSize(
+            mode: stateManager.mode,
+            event: stateManager.currentEvent,
+            hasNotch: hasNotch,
+            sessionRows: budget.shown + (budget.hidden > 0 ? 1 : 0),
+            detailLines: stateManager.currentEvent?.detail
+                .map { min($0.split(separator: "\n").count, 10) } ?? 0,
+            decisionRows: decisionRowCount(stateManager.currentEvent)
+        )
+    }
+
     static func adjustedSize(
         mode: IslandMode,
         event: IslandEvent?,
@@ -250,15 +266,7 @@ class IslandPanel: NSPanel {
         Self.applyScreenMetrics(screen)
         let hasNotch = Self.detectHasNotch(for: screen)
         stateManager.hasNotch = hasNotch
-        let detailLines = stateManager.currentEvent?.detail
-            .map { min($0.split(separator: "\n").count, 10) } ?? 0
-        let size = Self.adjustedSize(
-            mode: stateManager.mode,
-            event: stateManager.currentEvent,
-            hasNotch: hasNotch,
-            sessionRows: stateManager.activeSessions.count,
-            detailLines: detailLines
-        )
+        let size = Self.size(for: stateManager, hasNotch: hasNotch)
         let newFrame = Self.topCenteredFrame(on: screen, size: size)
         setFrame(newFrame, display: true)
         syncPulsePanelFrame(mainFrame: newFrame)

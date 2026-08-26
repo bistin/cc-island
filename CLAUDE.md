@@ -376,7 +376,12 @@ routes it to `removeSession` instead of `updateSession`. It still shows — "Age
 the ears — it just does not leave a row.
 
 **The tree had no ceiling.** `sessionRowsToShow(total:limit:)` now bounds it at five, the last of
-which is "and N more". That is a floor under correctness rather than a substitute for it: what put
+which is "and N more". The cap is applied in `IslandPanel.size(for:hasNotch:)`, which is the only
+place the panel's size is computed — three call sites used to assemble those arguments separately
+and two of them were wrong: `relocate` passed the raw session count, so moving the island to
+another screen undid the cap, and `refreshLayoutForCurrentScreen` did that *and* omitted
+`decisionRows`, which is the omission that cost the permission dialog its diff, still live on the
+display-change path days after being fixed elsewhere. That is a floor under correctness rather than a substitute for it: what put
 fourteen rows there was the close path above. The cap is what keeps the next leak from being
 unbounded, since rows are 18 points each and the height arithmetic multiplied by however many
 there were.
