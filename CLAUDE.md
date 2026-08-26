@@ -60,6 +60,14 @@ at" indistinguishable from "found no pane" — so selecting a pane on a detached
 anyway. The modelling lives in the core because conflating two facts in one optional is what a
 type can prevent and a test can catch.
 
+**Taps have one implementation each, on the state manager.** `handleCompactTap()` for the ears,
+`handleExpandedTap(for:)` for the panel, and the decisions behind them —
+`shouldTapJumpToTerminal`, `expandedTapAction` — in `DynamicIslandCore` where they can be checked
+without a window. The expanded one was inline in two views and the copies had already drifted: the
+notch panel learned to take the tap to the terminal and the capsule did not, so on a display
+without a notch the panel never reached the session it was pointing at. Found by an audit that was
+looking for exactly this shape, having just seen it in the jump button.
+
 **Focusing a terminal goes through the state manager, never straight to `TerminalActivator`.**
 `IslandStateManager.focusTerminal(tty:tmuxSocket:)` focuses and leaves the island alone;
 `jumpToTerminal(for:)` is that plus a dismiss, and applies the tap policy. The permission dialog's

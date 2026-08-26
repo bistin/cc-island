@@ -473,3 +473,53 @@ final class SessionRowBudgetTests: XCTestCase {
         XCTAssertEqual(sessionRowsToShow(total: -3).shown, 0)
     }
 }
+
+// MARK: - Tapping the expanded panel
+
+final class ExpandedTapActionTests: XCTestCase {
+
+    /// The drift this exists to prevent: the notch panel learned to take the tap to the terminal
+    /// and the capsule did not, so on a display without a notch the panel never reached the
+    /// session it was pointing at. One decision, one place, checkable without a window.
+    func testAPointerPanelFollowsItsPointer() {
+        XCTAssertEqual(
+            expandedTapAction(style: .reminder, hasReplyMode: false, canJumpToTerminal: true),
+            .jumpToTerminal)
+    }
+
+    /// Collapsing sets a dismiss timer that would strand a hook still long-polling for the answer,
+    /// so a tap on a decision does nothing rather than something tidy.
+    func testADecisionSwallowsTheTap() {
+        XCTAssertEqual(
+            expandedTapAction(style: .action, hasReplyMode: false, canJumpToTerminal: true),
+            .ignore)
+        XCTAssertEqual(
+            expandedTapAction(style: .reminder, hasReplyMode: true, canJumpToTerminal: true),
+            .ignore)
+    }
+
+    /// Being mid-decision wins over having somewhere to go — otherwise a tap would walk away from
+    /// the buttons it was aimed at.
+    func testIgnoreWinsOverJumping() {
+        for canJump in [true, false] {
+            XCTAssertEqual(
+                expandedTapAction(style: .action, hasReplyMode: true, canJumpToTerminal: canJump),
+                .ignore)
+        }
+    }
+
+    func testNowhereToGoMeansFoldItAway() {
+        XCTAssertEqual(
+            expandedTapAction(style: .reminder, hasReplyMode: false, canJumpToTerminal: false),
+            .collapse)
+        XCTAssertEqual(
+            expandedTapAction(style: .other, hasReplyMode: false, canJumpToTerminal: false),
+            .collapse)
+    }
+
+    func testAnOrdinaryEventWithATerminalStillJumps() {
+        XCTAssertEqual(
+            expandedTapAction(style: .other, hasReplyMode: false, canJumpToTerminal: true),
+            .jumpToTerminal)
+    }
+}

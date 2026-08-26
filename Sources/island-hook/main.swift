@@ -225,7 +225,13 @@ case "SubagentStop":
     // The agent id was missing here, which made the whole message a no-op: the app's handler
     // reads it to know which row to close and returned early without one. Nothing ever removed
     // a subagent row, and the 90-second sweep was the only thing that did.
-    send(["type": "subagent_stop", "agent_id": plan.payload["agent_id"] as? String ?? ""])
+    // Omitted rather than blanked when absent, matching how `decorate` writes every other
+    // optional field. Sending "" would have the server call removeSession(id: "") — harmless,
+    // because no row has that id, but it is one character from the shape of the bug this
+    // message had in the first place.
+    var close: [String: Any] = ["type": "subagent_stop"]
+    if let id = plan.payload["agent_id"] as? String, !id.isEmpty { close["agent_id"] = id }
+    send(close)
     send(buildSubagentStopPayload(plan))
 
 case "SessionStart":

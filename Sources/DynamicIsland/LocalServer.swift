@@ -365,7 +365,9 @@ class LocalServer {
 
         // Subagent channel close — remove from session list, no island event
         if type == "subagent_stop" {
-            if let agentId = json["agent_id"] as? String {
+            // Non-empty, not merely present: an empty id matches no row, so accepting one would
+            // be a call that looks like it did something.
+            if let agentId = json["agent_id"] as? String, !agentId.isEmpty {
                 stateManager?.removeSession(id: agentId)
             }
             return
