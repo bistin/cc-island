@@ -19,15 +19,15 @@ The app listens on **port 9423** for HTTP POST events.
 
 - **NSPanel** at `CGShieldingWindowLevel + 1` to render above menu bar at notch level
 - **Custom Shape paths** (`LeftEarShape` / `RightEarShape`) with concave inner corners to hug the notch's rounded edges
-- `HStack(spacing: notchWidth)` with `maxWidth: .infinity` on each half ensures the notch gap stays centered regardless of ear text width
+- The two ears are fixed at `IslandPanel.earWidth` and the window is `earWidth * 2 + notchWidth`, so the gap stays centred regardless of ear text width
 - **LSUIElement = true** hides app from Dock
-- `IslandStateManager` replaces the current event immediately on every push (no backlog) — rapid hook bursts don't queue up
-- Notch dimensions auto-detected via `NSScreen.auxiliaryTopLeftArea/RightArea`; fallback constants in `IslandPanel.swift` target 14" MBP (`notchWidth≈180`, `notchHeight≈32`, concave radius 10, outer radius 16). Sub-pixel compensation (`-1pt`) keeps the right edge flush
+- `IslandStateManager` shows an incoming event immediately *unless* somebody is mid-decision. `decideEventDisposition` then either queues it (`pendingActions`, drained one at a time by `dismiss()`) or drops it as transient noise — see "Waiting for a person". This line used to say there was no backlog at all, which was true before the decision guard and has been the opposite of the code since
+- Notch dimensions auto-detected via `NSScreen.auxiliaryTopLeftArea/RightArea`; fallback constants in `IslandPanel.swift` target 14" MBP (`notchWidth` 185, `notchHeight≈32`, concave radius 10, outer radius 16). Sub-pixel compensation (`-1pt`) keeps the right edge flush
 - **`DynamicIslandCore` SPM library** houses pure-logic pieces reachable from unit tests without AppKit: `ScreenResolver` (point-in-rect screen lookup) and `HTTPParser` (RFC 7230 request framing). Mirrors the `IslandHookCore` pattern
 
 ## Multi-display (follow cursor)
 
-The panel follows the user's cursor across screens. `ScreenFollower` polls `NSEvent.mouseLocation` every 50 ms with a 200 ms dwell debounce; `IslandPanel.relocate(to:animated:)` fades out (0.15s), re-runs `applyScreenMetrics` for the target screen, `setFrame`s, and fades in (0.20s). Relocation triggers: `/event` POST (instant, via `IslandStateManager.pushEvent → panel?.relocateToCursorScreen`), cursor dwell ≥200 ms on a new screen, or `NSApplication.didChangeScreenParametersNotification`. Per-screen layout switches between notch and capsule (non-notch displays use `fallbackLayout`); mid-event state (permission dialogs, progress) survives the move. `NSScreen+Display` extracts `displayID` / `containing(_:)` so the formula lives in one place. Single-screen setups are unaffected — the dwell loop short-circuits every tick.
+The panel follows the user's cursor across screens. `ScreenFollower` polls `NSEvent.mouseLocation` every 50 ms with a 200 ms dwell debounce; `IslandPanel.relocate(to:)` fades out (0.15s), re-runs `applyScreenMetrics` for the target screen, `setFrame`s, and fades in (0.20s). Relocation triggers: `/event` POST (instant, via `IslandStateManager.pushEvent → panel?.relocateToCursorScreen`), cursor dwell ≥200 ms on a new screen, or `NSApplication.didChangeScreenParametersNotification`. Per-screen layout switches between notch and capsule (non-notch displays use `fallbackLayout`); mid-event state (permission dialogs, progress) survives the move. `NSScreen+Display` extracts `displayID` / `containing(_:)` so the formula lives in one place. Single-screen setups are unaffected — the dwell loop short-circuits every tick.
 
 ## Where the server listens
 
@@ -77,19 +77,21 @@ not.
 
 That button used to call `TerminalActivator.activate(tty:)` in its own closure, and so never
 learned about the tmux socket — a pane on a `tmux -L` server was unreachable from it for as long
-as the socket support had existed. A closure is where policy goes to be forgotten. Nothing in
-`Views/` calls the activator directly any more.
+as the socket support had existed. A closure is where policy goes to be forgotten. No view
+calls `activate(tty:)` directly any more — though `Reply.swift` still asks the activator
+`hasRunningTerminal()` to decide whether to draw the button, which is the visibility half of the
+same policy and has not been collected yet.
 
 ## HTTP framing
 
-`LocalServer.handleConnection` used to call `connection.receive()` once and assume the bytes were one complete request. That's wrong for any TCP stream: `URLSession` on loopback routinely delivers headers in one chunk and body in the next, so `island-hook` POSTs silently failed with 400 `missing_body` (~80% drop rate measured in practice). Fixed in v1.6: the server now loops `receive()` until the full request is buffered (1 MiB cap; fail-fast 413 on declared oversize). Parsing is extracted into `DynamicIslandCore.HTTPParser` with 15 unit tests. Hardening per RFC 7230: duplicate/conflicting `Content-Length` → 400, `Transfer-Encoding` (no chunked decoder) → 400.
+`LocalServer.handleConnection` used to call `connection.receive()` once and assume the bytes were one complete request. That's wrong for any TCP stream: `URLSession` on loopback routinely delivers headers in one chunk and body in the next, so `island-hook` POSTs silently failed with 400 `missing_body` (~80% drop rate measured in practice). Fixed in v1.6: the server now loops `receive()` until the full request is buffered (1 MiB cap; fail-fast 413 on declared oversize). Parsing is extracted into `DynamicIslandCore.HTTPParser`, covered by its own test class. Hardening per RFC 7230: duplicate/conflicting `Content-Length` → 400, `Transfer-Encoding` (no chunked decoder) → 400.
 
 ## Event Styles
 
 - `info` / `success` / `warning` / `error` — standard notifications
 - `claude` — warm orange, default for Claude Code tool events
 - `action` — persistent, pulsing blue, expanded view with Allow/Deny buttons; used for `PermissionRequest`
-- `reminder` — pulsing blue, no buttons; used when attention is needed but there's nothing to decide
+- `reminder` — pulsing blue. The `PreToolUse` waiting event carries no buttons because the menu is in the terminal; a `Stop` reminder can carry quick replies or a freeform field, which render off `replyMode` rather than off the style
 
 ## App icon
 
@@ -174,6 +176,13 @@ Validated against all 30 transcripts on the development machine: 25 idle, 3 unkn
 mid-turn with no `turn_duration`), 2 working — one of them the session doing the validation, the
 other confirmed live by its mtime and a matching `claude` process.
 
+**Nothing calls any of it.** No production path reads a transcript; outside its own file and tests
+the only references are doc comments and `Compat.dependencies` rows. So the hole this section opens
+by naming it — a session started before the hook was installed is invisible — is still open, and
+`docs/compatibility.md` ships the symptom "Session state is always `unknown`" for something with no
+runtime. It was built and tested first so the reading could be judged on its own; wiring it is a
+decision nobody has made yet.
+
 ## Jumping to the right terminal tab
 
 A click on the island focuses the pane running that session. `TerminalActivator` tries three
@@ -201,7 +210,7 @@ things come out of it:
 an ordinary subprocess and asking it to change its own selection is not cross-app automation. It
 runs off the main thread for the same reason; only the AppleScript half needs a run loop.
 
-Two limits worth knowing before debugging a report that it did nothing:
+One limit worth knowing before debugging a report that it did nothing:
 
 - **Which app comes forward is still a guess** when the terminal has no AppleScript tab model.
   tmux puts the right pane in front inside its own window, but with both Terminal.app and Ghostty
@@ -233,7 +242,7 @@ second window:
 ```
 $ DynamicIsland --reveal-tty /dev/ttys005
 reveal /dev/ttys005
-tmux: pane selected, emulator knows it as /dev/ttys007
+tmux: selected the pane, emulator tty /dev/ttys007
 applescript: no tab matched /dev/ttys007 — expected for a terminal with no tab model; tmux already aimed the pane
 ```
 
@@ -241,15 +250,15 @@ A tty that fails `decodeTTY` is refused with exit 1 rather than passed on.
 
 ## Hook Integration
 
-`Sources/island-hook/main.swift` is the canonical universal hook entry point — a Foundation-only Swift binary (~109KB) that handles Claude Code, GitHub Copilot, and OpenAI Codex by sniffing payload shape (`hook_event_name` casing vs `toolName` at root). Reads JSON from stdin, dispatches via `IslandHookCore` (pure-logic library, fully unit-tested), and POSTs formatted events to `127.0.0.1:9423/event`. Must exit 0 so it never blocks the caller. PermissionRequest is the only event that emits stdout (provider-specific allow/deny JSON).
+`Sources/island-hook/main.swift` is the canonical universal hook entry point — a Foundation-only Swift binary (~170 KB) that handles Claude Code, GitHub Copilot, and OpenAI Codex by sniffing payload shape (`hook_event_name` casing vs `toolName` at root). Reads JSON from stdin, dispatches via `IslandHookCore` (pure-logic library, fully unit-tested), and POSTs formatted events to `127.0.0.1:9423/event`. Must exit 0 so it never blocks the caller. Two events write stdout: `PermissionRequest` (provider-specific allow/deny JSON) and `Stop`, when the payload carried quick replies or a freeform field and the user answered — `encodeStopBlockResponse` turns that into `decision: block` with the reply as the reason.
 
-Project label: derived from `cwd` basename; subagent events override it with `↳ <agent_type>`. A deterministic hash picks one of 8 palette colors so concurrent sessions are visually distinguishable.
+Project label: derived from `cwd` basename; subagent events override it with `↳ <agent_type>`. A deterministic hash picks one of 8 palette colours for the session-tree rows. The ears do not use it: `decorate` always sets `source`, and `projectColor` prefers the source colour, so every Claude session's ears are the same orange.
 
 ### Auto-install (HookInstaller.swift)
 
 Hooks are auto-installed on first launch via an NSAlert (Install / Skip / Never), with the choice persisted in `UserDefaults["hookInstallChoice"]`. Subsequent launches silently sync via `syncIfOutdated`, which is idempotent and only writes when the deployed script or settings actually drift.
 
-The binary is deployed to `~/.claude/hooks/dynamic-island-hook` (stable path independent of the .app location), and `~/.claude/settings.json` is updated non-destructively — entries from other tools (gemini-bridge etc.) are preserved by detecting "ours" via command path markers (`dynamic-island-hook` / `island-hook.sh` / `claude-hook.sh` / `DynamicIsland`). Drift detection: `currentlyInSync` byte-compares the deployed binary against the bundled source, so upgrading the .app triggers a redeploy on next launch.
+The binary is deployed to `~/.claude/hooks/dynamic-island-hook` (stable path independent of the .app location), and `~/.claude/settings.json` is updated non-destructively — entries from other tools (gemini-bridge etc.) are preserved by detecting "ours" as exact membership of `knownOwnedHookPaths` — the three current deploy paths plus two frozen legacy `.sh` literals. Deliberately not substring matching: `DynamicIsland` as a marker would claim any unrelated path that happened to contain it. The cost is that a settings entry pointing straight at a `DynamicIsland` binary is not recognised as ours, and uninstall leaves it. Drift detection: `currentlyInSync` byte-compares the deployed binary against the bundled source, so upgrading the .app triggers a redeploy on next launch.
 
 CLI:
 - `--install-hooks` / `--uninstall-hooks` — Claude Code (writes `~/.claude/settings.json`)
@@ -393,7 +402,7 @@ removal happened rather than the timer.
 
 ## Permission Flow
 
-`PermissionRequest` hook POSTs an `action`-style event (Permission title + tool detail), then long-polls `GET /response` for up to the permission-timeout setting (default 300s / 5 min). The UI buttons call `LocalServer.setResponse("allow"|"deny")`, which resumes the waiter. If no waiter is present the value is stored in `pendingResponse` for the next poll — but never persisted past a single delivery, to avoid stale clicks leaking into future requests. On timeout the hook exits silently and Claude Code falls back to its normal permission prompt.
+`PermissionRequest` hook POSTs an `action`-style event (Permission title + tool detail), then long-polls `GET /response` for up to the permission-timeout setting (default 300s / 5 min). The UI buttons call `LocalServer.setResponse("allow"|"deny")`, which resumes the waiter. If no waiter is present the decision is parked in `DynamicIslandCore.ResponseWaiterStore` keyed by event id, and handed only to a poll carrying that same `event_id`; a poll without one, or with a different one, gets `timeout`. Never persisted past a single delivery, so a stale click cannot leak into a later request. On timeout the hook exits silently and Claude Code falls back to its normal permission prompt.
 
 The horizon is one tunable value (`permissionTimeoutKey` UserDefault, default `PermissionTimeoutSeconds` = 300) read in three places that must agree: the hook long-poll (`CC_ISLAND_PERMISSION_TIMEOUT` env injected by `HookInstaller.commandString`, parsed into `HookPlan.permissionTimeoutSeconds`), the server long-poll (`LocalServer.handleResponsePoll`), and the UI expired-dim mirror (`IslandState.expirationTimeout`). `HookInstaller.events` registers the `PermissionRequest` entry timeout at `ceil(setting + 5)` so Claude Code doesn't SIGKILL the hook mid-poll. Changing the value requires reinstalling hooks (Settings → General → Timings → Permission timeout); the auto-sync on launch picks up the drift since the command string and entry timeout both change. Raised from the original hard-coded 25s — five minutes lets the user step away and still return to live Allow/Deny buttons instead of a dimmed, expired dialog.
 
@@ -401,7 +410,7 @@ The matcher in `settings.json` intentionally limits `PermissionRequest` to risky
 
 ### FIFO context correlation
 
-`PreToolUse` for Edit/Write/Bash/MultiEdit/NotebookEdit caches its full payload under `~/Library/Caches/cc-island/pretool/<key>.json`. The next `PermissionRequest` reads it to enrich the dialog: Edit/MultiEdit shows a colored diff (red `-` / green `+`), Write shows a content preview, Bash backfills the command/description if `tool_input` arrived empty. Single-slot per key (the next PreToolUse overwrites) — works because PreToolUse and PermissionRequest fire serially per session. Key resolves via `IslandHookCore.preToolCacheKey`: `session_id` first, then `agent-<agentId>-<project>` for subagents, then `<project>`, then `default`. Pre-v1.7.x layout was `/tmp/di_pretool_${PROJECT}.json` — the old path is world-readable on multi-user machines and predictable across processes, so the cache moved into the per-user `~/Library/Caches/` tree.
+`PreToolUse` for Edit/Write/Bash/MultiEdit/NotebookEdit/apply_patch caches its full payload under `~/Library/Caches/cc-island/pretool/<key>.json`. The next `PermissionRequest` reads it to enrich the dialog: Edit/MultiEdit shows a colored diff (red `-` / green `+`), Write shows a content preview, Bash backfills the command/description if `tool_input` arrived empty. Single-slot per key (the next PreToolUse overwrites) — works because PreToolUse and PermissionRequest fire serially per session. Key resolves via `IslandHookCore.preToolCacheKey`: `session_id` first, then `agent-<agentId>-<project>` for subagents, then `<project>`, then `default`. Pre-v1.7.x layout was `/tmp/di_pretool_${PROJECT}.json` — the old path is world-readable on multi-user machines and predictable across processes, so the cache moved into the per-user `~/Library/Caches/` tree.
 
 ## Numbers in the docs
 
@@ -506,6 +515,6 @@ same bounding box), which says the remaining difference is the camera rather tha
 
 ## Conventions
 
-- Pure Swift, no external dependencies — only Foundation, AppKit, SwiftUI, Network frameworks
+- Pure Swift, no external dependencies — system frameworks only (Foundation, AppKit, SwiftUI, Network, ServiceManagement, Combine, CoreGraphics)
 - SPM executable target (not Xcode project)
 - Animations use SwiftUI `.spring(response:dampingFraction:)`
