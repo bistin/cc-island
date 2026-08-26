@@ -1,3 +1,4 @@
+import DynamicIslandCore
 import SwiftUI
 
 // MARK: - Pending Action Dots
@@ -40,17 +41,24 @@ struct PermissionActionButtons: View {
 
     private var expired: Bool { stateManager.currentEventExpired }
 
+    /// Whether to draw the jump row at all — the visibility half of the same policy the action
+    /// half already asks `DynamicIslandCore` about. Kept in step by calling the same function,
+    /// rather than by two people remembering to change both.
     private var canJumpToTab: Bool {
-        guard !expired, clickToTerminalEnabled, let tty, !tty.isEmpty else { return false }
-        return TerminalActivator.hasRunningTerminal()
+        guard !expired else { return false }
+        return shouldTapJumpToTerminal(
+            style: .other,   // the row is drawn beside a decision; the decision is not what it acts on
+            hasReplyMode: false,
+            hasTTY: !(tty ?? "").isEmpty,
+            clickToTerminalEnabled: clickToTerminalEnabled
+        ) && TerminalActivator.hasRunningTerminal()
     }
 
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
                 Button(action: {
-                    stateManager.server?.setResponse("allow", eventID: eventID)
-                    stateManager.dismiss()
+                    stateManager.respond("allow", eventID: eventID)
                 }) {
                     Text("Allow")
                         .font(.system(size: 13, weight: .semibold))
@@ -66,8 +74,7 @@ struct PermissionActionButtons: View {
                 .disabled(expired)
 
                 Button(action: {
-                    stateManager.server?.setResponse("deny", eventID: eventID)
-                    stateManager.dismiss()
+                    stateManager.respond("deny", eventID: eventID)
                 }) {
                     Text("Deny")
                         .font(.system(size: 13, weight: .medium))
@@ -92,8 +99,7 @@ struct PermissionActionButtons: View {
             // mis-taps on the adjacent Allow button.
             if let rule = suggestedRule {
                 Button(action: {
-                    stateManager.server?.setResponse("allow", rule: rule, eventID: eventID)
-                    stateManager.dismiss()
+                    stateManager.respond("allow", rule: rule, eventID: eventID)
                 }) {
                     HStack(spacing: 8) {
                         Spacer()
@@ -177,8 +183,7 @@ struct QuickReplyButtons: View {
             HStack(spacing: 12) {
                 ForEach(labels, id: \.self) { label in
                     Button(action: {
-                        stateManager.server?.setResponse(label, eventID: eventID)
-                        stateManager.dismiss()
+                        stateManager.respond(label, eventID: eventID)
                     }) {
                         Text(label)
                             .font(.system(size: 13, weight: .medium))
@@ -258,9 +263,8 @@ struct InlineReplyField: View {
     }
 
     private func submit() {
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        stateManager.server?.setResponse(trimmed, eventID: eventID)
-        stateManager.dismiss()
+        // The trim and the empty guard moved into `respond`; the field is only cleared when the
+        // answer actually went, so an expired one leaves the typing where the user can see it.
+        if stateManager.respond(text, eventID: eventID) { text = "" }
     }
 }

@@ -526,6 +526,30 @@ class IslandStateManager: ObservableObject {
         return true
     }
 
+    /// Answer the decision the island is currently showing, and stand down.
+    ///
+    /// **The expiry check belongs here, not on the button.** It used to live only in
+    /// `.disabled(expired)`, which is a rendering property: a tap already in flight when
+    /// `currentEventExpired` flips still ran the closure and still resolved a waiter that had
+    /// stopped listening. Checking at the moment of acting closes that, and means every caller
+    /// gets the check rather than each one remembering it.
+    ///
+    /// It also collects the "resolve, then dismiss" pairing that was written out five times in
+    /// `Reply.swift` with three different argument shapes — the pattern that let the
+    /// jump-to-terminal button drift out of step with everything else.
+    ///
+    /// Returns false when the answer was not delivered, so a caller can leave its field alone
+    /// rather than clearing text the user may still need.
+    @discardableResult
+    func respond(_ behavior: String, rule: PermissionRuleSuggestion? = nil, eventID: UUID) -> Bool {
+        guard let answer = deliverableResponse(behavior, expired: currentEventExpired) else {
+            return false
+        }
+        server?.setResponse(answer, rule: rule, eventID: eventID)
+        dismiss()
+        return true
+    }
+
     /// Single entry point for taps on the expanded panel.
     ///
     /// It existed twice, inline, and the two copies had already drifted: the notch panel learned

@@ -263,3 +263,23 @@ public func expandedTapAction(
     if style == .action || hasReplyMode { return .ignore }
     return canJumpToTerminal ? .jumpToTerminal : .collapse
 }
+
+/// The answer to actually deliver for a decision, or nil when there is nothing to send.
+///
+/// Three rules that were spread across a view and a button modifier:
+///
+/// - **Trimmed.** A freeform reply of spaces is not a reply, and the trim used to live in the
+///   view's `submit()` while the button paths did no trimming at all.
+/// - **Non-empty**, for the same reason.
+/// - **Not expired.** This is the one that was in the wrong place entirely: the guard lived in
+///   `.disabled(expired)`, which is a rendering property. A tap already in flight when
+///   `currentEventExpired` flipped still ran its closure and still resolved a waiter that had
+///   stopped listening. Deciding at the moment of acting is what closes that.
+///
+/// Returning the answer rather than a Bool lets the caller clear its text field only when the
+/// reply actually went, instead of throwing away something the user may still need.
+public func deliverableResponse(_ raw: String, expired: Bool) -> String? {
+    guard !expired else { return nil }
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+}
