@@ -3,7 +3,7 @@
 // island event (via IslandHookCore), and POSTs it to the running Dynamic
 // Island app on 127.0.0.1:9423.
 //
-// PermissionRequest is the only event that produces stdout: it long-polls
+// PermissionRequest and Stop are the two events that produce stdout. PermissionRequest long-polls
 // /response and emits the JSON allow/deny decision the active provider expects.
 
 import Foundation
